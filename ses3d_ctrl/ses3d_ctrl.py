@@ -13,8 +13,7 @@ import sys
 import tarfile
 
 from .sites import available_sites
-from .ses3d_input_files import (parse_setup_file, parse_event_file,
-                                get_receiver_count)
+from .ses3d_input_files import SES3DInputFiles
 
 
 CONFIG_FILE_PATH = os.path.expanduser("~/.ses3d_ctrl.json")
@@ -143,6 +142,7 @@ def check_and_parse_input_files(folder):
 
     :param folder: Folder with the input files.
     """
+    return SES3DInputFiles(folder)
     if not os.path.exists(folder):
         raise ValueError("Folder '%s' does not exist." % folder)
 
@@ -167,14 +167,24 @@ def check_and_parse_input_files(folder):
         raise ValueError("Event and receiver files in folder '%s' don't "
                          "match.")
 
-    return {
+    stf = parse_stf(files["stf"])
+
+    info = {
         "setup": setup,
+        "stf": stf,
         "events": {name: {"filename": filename,
                           "receiver_file": recfiles[name],
                           "receiver_count": get_receiver_count(recfiles[name]),
                           "contents": parse_event_file(filename)}
                    for name, filename in events.items()}
         }
+
+    # Some very basic checks.
+    max_nt = max([_i["contents"] ["nt"] for _i in info["events"].values()])
+    if max_nt > len(stf):
+        raise ValueError("The biggest event wants to run for %i timesteps, "
+                         "the STF only has %i timesteps." % (max_nt, len(stf)))
+    return info
 
 
 @cli.command()
@@ -193,14 +203,7 @@ def run(config, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
     Run a simulation for the chosen input files.
     """
     _progress("Parsing and checking input files ...")
-    input_files = check_and_parse_input_files(input_files_folder)
-
-    # From the setup file get the maximum number of receivers and the maximum
-    # number of time steps.
-    max_receivers = max([_i["receiver_count"]
-                         for _i in input_files["events"].values()])
-    max_nt = max([_i["contents"] ["nt"]
-                  for _i in input_files["events"].values()])
+    input_files = SES3DInputFiles(input_files_folder)
 
     # Get a new working directory.
     cwd = config.site.get_new_working_directory()
@@ -224,13 +227,13 @@ def run(config, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
             fh.extract(member, cwd)
 
     _progress("Compiling SES3D ...")
-    s = input_files["setup"]
+    s = input_files.setup
     config.site.compile_ses3d(
         cwd=cwd,
         nx_max=s["nx_global"] // s["px"],
         ny_max=s["ny_global"] // s["py"],
         nz_max=s["nz_global"] // s["pz"],
-        maxnt=max_nt, maxnr=max_receivers,
+        maxnt=input_files.max_nt, maxnr=input_files.max_receivers,
         lpd=lpd, fw_lpd=fw_lpd, pml_count=pml_count, pml_limit=pml_limit)
 
 @cli.command()
