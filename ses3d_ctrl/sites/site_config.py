@@ -61,7 +61,7 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         return directory
 
     def compile_ses3d(self, cwd, nx_max, ny_max, nz_max, lpd, fw_lpd, maxnt,
-                      maxnr, pml_count):
+                      maxnr, pml_count, pml_limit=-1):
         """
         Compile SES3D patching the config file beforehand.
 
@@ -89,7 +89,8 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
                     FW_LPD=fw_lpd,
                     MAXNT=maxnt,
                     MAXNR=maxnr,
-                    PML=pml_count))
+                    PML=pml_count,
+                    PML_LIMIT=pml_limit))
 
         args = [self.mpi_compiler]
         args.extend(self.mpi_compiler_flags)

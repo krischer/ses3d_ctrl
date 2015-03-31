@@ -3,6 +3,8 @@
 from __future__ import absolute_import
 
 import click
+import glob
+import hashlib
 import io
 import json
 import os
@@ -11,7 +13,8 @@ import sys
 import tarfile
 
 from .sites import available_sites
-from .ses3d_input_files import parse_setup_file
+from .ses3d_input_files import (parse_setup_file, parse_event_file,
+                                get_receiver_count)
 
 
 CONFIG_FILE_PATH = os.path.expanduser("~/.ses3d_ctrl.json")
@@ -24,6 +27,7 @@ DEFAULT_CONFIG = {
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 SES3D_PATH = os.path.join(DATA_DIR, "ses3d_r07_b.tgz")
+SES3D_MD5_CHECKSUM = "3834d425da0d49439e753fe481620c3d"
 
 
 def _read_config_file():
@@ -39,6 +43,7 @@ def _read_config_file():
             data[key] = os.path.expanduser(os.path.expandvars(value))
     return data
 
+
 def _write_default_config_file():
     with io.open(CONFIG_FILE_PATH, "w") as fh:
         json.dump(DEFAULT_CONFIG, fh,
@@ -48,9 +53,9 @@ def _write_default_config_file():
 
 
 class Config(object):
-    def __init__(self):
-        pass
-
+    """
+    Config passed to all subcommands.
+    """
     def update(self, items):
         for key, value in items.items():
             setattr(self, key, value)
@@ -97,8 +102,6 @@ class Config(object):
 pass_config = click.make_pass_decorator(Config, ensure=True)
 
 
-#@click.option("--verbose", is_flag=True)
-#@click.option("--home-directory", type=click.Path())
 @click.group()
 @pass_config
 def cli(config):
@@ -126,6 +129,9 @@ def info(config):
 
 
 def _progress(msg):
+    """
+    Consistent and "pretty" progress logs.
+    """
     click.echo(click.style(" -> ", fg="red"), nl=False)
     click.echo(click.style(msg, fg="green"))
 
@@ -143,11 +149,32 @@ def check_and_parse_input_files(folder):
     files = ["setup", "relax", "stf"]
     files = {_i: os.path.join(folder, _i) for _i in files}
 
-    for filename in files.items():
+    for filename in files.values():
         if not os.path.exists(filename):
             raise ValueError("File '%s' does not exist" % filename)
 
     setup = parse_setup_file(files["setup"])
+
+    # Find all events and associated receiver files.
+    events = [_i for _i in glob.glob(os.path.join(folder, "event_*")) if
+              os.path.basename(_i) != "event_list"]
+    recfiles = glob.glob(os.path.join(folder, "recfile_*"))
+
+    events = {os.path.basename(_i).lstrip("event_"): _i for _i in events}
+    recfiles = {os.path.basename(_i).lstrip("recfile_"): _i for _i in recfiles}
+
+    if set(events.keys()) != set(recfiles.keys()):
+        raise ValueError("Event and receiver files in folder '%s' don't "
+                         "match.")
+
+    return {
+        "setup": setup,
+        "events": {name: {"filename": filename,
+                          "receiver_file": recfiles[name],
+                          "receiver_count": get_receiver_count(recfiles[name]),
+                          "contents": parse_event_file(filename)}
+                   for name, filename in events.items()}
+        }
 
 
 @cli.command()
@@ -155,20 +182,40 @@ def check_and_parse_input_files(folder):
               help="Degree of the Lagrange polynomials for the simulation")
 @click.option("--fw-lpd", type=int, default=1, show_default=True,
               help="Polynomial degree for storing the forward field")
+@click.option("--pml-count", type=int, default=3, show_default=True,
+              help="Number of PMLs at each boundary.")
 @click.option("--pml-limit", type=int, default=10000, show_default=True,
               help="Number of time steps for which PMLs are enabled.")
 @click.argument("input_files_folder", type=click.Path())
 @pass_config
-def run(config, input_files_folder, lpd, fw_lpd):
+def run(config, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
     """
     Run a simulation for the chosen input files.
     """
+    _progress("Parsing and checking input files ...")
+    input_files = check_and_parse_input_files(input_files_folder)
+
+    # From the setup file get the maximum number of receivers and the maximum
+    # number of time steps.
+    max_receivers = max([_i["receiver_count"]
+                         for _i in input_files["events"].values()])
+    max_nt = max([_i["contents"] ["nt"]
+                  for _i in input_files["events"].values()])
+
     # Get a new working directory.
     cwd = config.site.get_new_working_directory()
-    _progress("Initializing run '%s' ..." % cwd)
+    _progress("Initializing run '%s' ..." % os.path.basename(cwd))
 
     # Untar SES3D to that working directory.
     _progress("Extracting SES3D ...")
+    # Use checksum to assert the file is correct.
+    with io.open(SES3D_PATH, "rb") as fh:
+        md5 = hashlib.md5(fh.read()).hexdigest()
+
+    if md5 != SES3D_MD5_CHECKSUM:
+        raise ValueError("md5 of the SES3D archive is not %s" %
+                         SES3D_MD5_CHECKSUM)
+
     with tarfile.open(SES3D_PATH, "r:gz") as fh:
         for member in fh.getmembers():
             if not member.isreg():
@@ -177,7 +224,14 @@ def run(config, input_files_folder, lpd, fw_lpd):
             fh.extract(member, cwd)
 
     _progress("Compiling SES3D ...")
-    config.site.compile_ses3d(cwd, lpd=lpd, fw_lpd=fw_lpd)
+    s = input_files["setup"]
+    config.site.compile_ses3d(
+        cwd=cwd,
+        nx_max=s["nx_global"] // s["px"],
+        ny_max=s["ny_global"] // s["py"],
+        nz_max=s["nz_global"] // s["pz"],
+        maxnt=max_nt, maxnr=max_receivers,
+        lpd=lpd, fw_lpd=fw_lpd, pml_count=pml_count, pml_limit=pml_limit)
 
 @cli.command()
 @click.argument("model_folder",
