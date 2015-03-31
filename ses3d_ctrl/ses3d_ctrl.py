@@ -37,7 +37,7 @@ def _read_config_file():
         raise ValueError("Config file '%s' must contain exactly these keys:\n"
                          "\t%s" % (CONFIG_FILE_PATH, default_keys))
     for key, value in data.items():
-        if isinstance(value, str):
+        if isinstance(value, (str, unicode, bytes)):
             data[key] = os.path.expanduser(os.path.expandvars(value))
 
     if not os.path.exists(data["adjoint_dir"]):
@@ -158,19 +158,26 @@ def _progress(msg):
               help="Number of PMLs at each boundary.")
 @click.option("--pml-limit", type=int, default=10000, show_default=True,
               help="Number of time steps for which PMLs are enabled.")
-@click.argument("input_files_folder", type=click.Path())
+@click.argument("input_files_folders", type=click.Path(), nargs=-1)
 @pass_config
-def run(config, model, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
+def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit):
     """
-    Run a simulation for the chosen input files.
+    Run a simulation for the chosen input files. If multiple input file folders
+    are given, they will be merged.
     """
     model = model.lower()
     if model not in config.list_models():
         raise ValueError("Model '%s' not known. Available models:\n%s" % (
             model, "\n\t".join(config.list_models())))
 
-    _progress("Parsing and checking input files ...")
-    input_files = SES3DInputFiles(input_files_folder)
+    # Read and merge all input files.
+    _progress("Parsing, checking, and merging input files ...")
+    input_files = [SES3DInputFiles(_i) for _i in input_files_folders]
+    ip = input_files.pop()
+
+    for _i in input_files:
+        ip = ip.merge(_i)
+    input_files = ip
 
     # Get a new working directory.
     cwd = config.site.get_new_working_directory()

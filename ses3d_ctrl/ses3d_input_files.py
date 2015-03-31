@@ -110,7 +110,7 @@ class SES3DInputFiles(object):
         with io.open(filename, "rt") as fh:
             for line in fh:
                 line = line.strip()
-                if line.endswith("=========="):
+                if not line or line.endswith("=========="):
                     continue
                 line = line.split()
                 # No need to store the adjoint path. We'll change it in any
@@ -189,15 +189,15 @@ class SES3DInputFiles(object):
         output.extend(["%e" for _i in self.stf])
         output.append("")
         with io.open(os.path.join(output_folder, "stf"), "wt") as fh:
-            fh.write("\n".join(output))
+            fh.write(u"\n".join(output))
 
         # Write the relaxation parameters.
         with io.open(utils.get_template("relax"), "rt") as fh:
             with io.open(os.path.join(output_folder, "relax"), "wt") as fh2:
                 fh2.write(fh.read().format(
-                    relaxation_times="\n".join(
+                    relaxation_times=u"\n".join(
                         map(str, self.relaxation_times)),
-                    weights="\n".join(map(str, self.relaxation_weights))
+                    weights=u"\n".join(map(str, self.relaxation_weights))
                 ))
 
         # Write setup.
@@ -225,8 +225,8 @@ class SES3DInputFiles(object):
 
         # Write the event_list file.
         with io.open(os.path.join(output_folder, "event_list"), "wt") as fh:
-            fh.write("%i                   ! n_events = number of events\n" %
+            fh.write(u"%i                   ! n_events = number of events\n" %
                      len(self.events))
             for name in self.events.keys():
-                fh.write("%s\n" % name)
-            fh.write("\n")
+                fh.write(u"%s\n" % name)
+            fh.write(u"\n")
