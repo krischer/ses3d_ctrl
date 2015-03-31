@@ -59,6 +59,43 @@ class SES3DInputFiles(object):
                 "the STF only has %i timesteps." % (self.max_nt,
                                                     len(self.stf)))
 
+    def merge(self, other):
+        """
+        Creates a new SES3DInputFile object merging self and other if they are
+        compatible.
+
+        Will raise otherwise.
+        """
+        # Events must not overlap.
+        if set(self.events.keys()).intersection(set(other.events.keys())):
+            raise ValueError("Objects must not share events names.")
+
+        # Setup must be identical!
+        if self.setup != other.setup:
+            raise ValueError("Objects must have the same setup.")
+
+        # Same for the stf and the relaxation settings.
+        np.testing.assert_allclose(
+            self.stf, other.stf, atol=self.stf.ptp() * 1E-7,
+            err_msg="Objects must have the same source time function.")
+
+        np.testing.assert_allclose(
+            self.relaxation_times, other.relaxation_times,
+            atol=self.stf.ptp() * 1E-7,
+            err_msg="Objects must have the same relaxation times.")
+
+        np.testing.assert_allclose(
+            self.relaxation_weights, other.relaxation_weights,
+            atol=self.stf.ptp() * 1E-7,
+            err_msg="Objects must have the same relaxation weights.")
+
+        # Copy and create merged_object. Only the events need to be merged. The
+        # rest has to be identical to even reach this point in the code.
+        merged = copy.deepcopy(self)
+        merged.events.update(copy.deepcopy(other.events))
+
+        return merged
+
     @property
     def max_nt(self):
         return max([_i["contents"]["nt"] for _i in self.events.values()])
