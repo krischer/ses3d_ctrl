@@ -3,7 +3,6 @@
 from __future__ import absolute_import
 
 import click
-import glob
 import hashlib
 import io
 import json
@@ -86,7 +85,6 @@ class Config(object):
                 os.path.isdir(os.path.join(self.root_working_dir, _i)) and not
                 _i.startswith("_")]
 
-
     def __str__(self):
         ret_str = (
             "SES3D Ctrl Config "
@@ -133,58 +131,6 @@ def _progress(msg):
     """
     click.echo(click.style(" -> ", fg="red"), nl=False)
     click.echo(click.style(msg, fg="green"))
-
-
-def check_and_parse_input_files(folder):
-    """
-    Checks if all input files exist and extracts some basic information from
-    them.
-
-    :param folder: Folder with the input files.
-    """
-    return SES3DInputFiles(folder)
-    if not os.path.exists(folder):
-        raise ValueError("Folder '%s' does not exist." % folder)
-
-    files = ["setup", "relax", "stf"]
-    files = {_i: os.path.join(folder, _i) for _i in files}
-
-    for filename in files.values():
-        if not os.path.exists(filename):
-            raise ValueError("File '%s' does not exist" % filename)
-
-    setup = parse_setup_file(files["setup"])
-
-    # Find all events and associated receiver files.
-    events = [_i for _i in glob.glob(os.path.join(folder, "event_*")) if
-              os.path.basename(_i) != "event_list"]
-    recfiles = glob.glob(os.path.join(folder, "recfile_*"))
-
-    events = {os.path.basename(_i).lstrip("event_"): _i for _i in events}
-    recfiles = {os.path.basename(_i).lstrip("recfile_"): _i for _i in recfiles}
-
-    if set(events.keys()) != set(recfiles.keys()):
-        raise ValueError("Event and receiver files in folder '%s' don't "
-                         "match.")
-
-    stf = parse_stf(files["stf"])
-
-    info = {
-        "setup": setup,
-        "stf": stf,
-        "events": {name: {"filename": filename,
-                          "receiver_file": recfiles[name],
-                          "receiver_count": get_receiver_count(recfiles[name]),
-                          "contents": parse_event_file(filename)}
-                   for name, filename in events.items()}
-        }
-
-    # Some very basic checks.
-    max_nt = max([_i["contents"] ["nt"] for _i in info["events"].values()])
-    if max_nt > len(stf):
-        raise ValueError("The biggest event wants to run for %i timesteps, "
-                         "the STF only has %i timesteps." % (max_nt, len(stf)))
-    return info
 
 
 @cli.command()
@@ -235,6 +181,7 @@ def run(config, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
         nz_max=s["nz_global"] // s["pz"],
         maxnt=input_files.max_nt, maxnr=input_files.max_receivers,
         lpd=lpd, fw_lpd=fw_lpd, pml_count=pml_count, pml_limit=pml_limit)
+
 
 @cli.command()
 @click.argument("model_folder",

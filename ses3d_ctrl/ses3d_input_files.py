@@ -50,7 +50,8 @@ class SES3DInputFiles(object):
         if self.max_nt > len(self.stf):
             raise ValueError(
                 "The biggest event wants to run for %i timesteps, "
-                "the STF only has %i timesteps." % (max_nt, len(stf)))
+                "the STF only has %i timesteps." % (self.max_nt,
+                                                    len(self.stf)))
 
     @property
     def max_nt(self):
@@ -69,7 +70,8 @@ class SES3DInputFiles(object):
                 if line.endswith("=========="):
                     continue
                 line = line.split()
-                # No need to store the adjoint path. We'll change it in any case.
+                # No need to store the adjoint path. We'll change it in any
+                # case.
                 if len(line) == 1:
                     continue
                 values[contents[idx][0]] = contents[idx][1](line[0])
