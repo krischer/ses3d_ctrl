@@ -89,6 +89,11 @@ class Config(object):
         return [_i for _i in os.listdir(self.model_dir)
                 if os.path.isdir(os.path.join(self.model_dir, _i))]
 
+    def get_model_path(self, name):
+        if name not in self.list_models():
+            raise ValueError("Model %s not found" % name)
+        return os.path.join(self.model_dir, name)
+
     def list_runs(self):
         return [_i for _i in os.listdir(self.root_working_dir) if
                 os.path.isdir(os.path.join(self.root_working_dir, _i)) and not
@@ -143,6 +148,8 @@ def _progress(msg):
 
 
 @cli.command()
+@click.option("--model", type=str, required=True,
+              help="The model to use for the run.")
 @click.option("--lpd", type=int, default=4, show_default=True,
               help="Degree of the Lagrange polynomials for the simulation")
 @click.option("--fw-lpd", type=int, default=1, show_default=True,
@@ -153,10 +160,15 @@ def _progress(msg):
               help="Number of time steps for which PMLs are enabled.")
 @click.argument("input_files_folder", type=click.Path())
 @pass_config
-def run(config, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
+def run(config, model, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
     """
     Run a simulation for the chosen input files.
     """
+    model = model.lower()
+    if model not in config.list_models():
+        raise ValueError("Model '%s' not known. Available models:\n%s" % (
+            model, "\n\t".join(config.list_models())))
+
     _progress("Parsing and checking input files ...")
     input_files = SES3DInputFiles(input_files_folder)
 
@@ -209,6 +221,12 @@ def run(config, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
         output_folder=input_file_dir,
         waveform_output_folder=waveform_folder,
         adjoint_output_folder=os.path.abspath(config.adjoint_dir))
+
+    _progress("Copying model ...")
+    model_folder = os.path.join(cwd, "MODELS", "MODELS")
+    if os.path.exists(model_folder):
+        shutil.rmtree(model_folder)
+    shutil.copytree(config.get_model_path(model), model_folder)
 
 
 @cli.command()
