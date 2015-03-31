@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import abc
+import arrow
 import datetime
 import io
 import os
@@ -29,8 +30,12 @@ SES3D_SOURCES = [
 
 
 class SiteConfig(six.with_metaclass(abc.ABCMeta)):
-    def __init__(self, working_directory):
+    executable = os.path.basename(SES3D_EXECUTABLE)
+    executable_path = os.path.dirname(SES3D_EXECUTABLE)
+
+    def __init__(self, working_directory, log_directory):
         self._working_dir = working_directory
+        self._log_directory = log_directory
 
     @abc.abstractproperty
     def compiler(self):
@@ -51,6 +56,44 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
     @property
     def working_dir(self):
         return os.path.expandvars(os.path.expanduser(self._working_dir))
+
+    def get_log_dir(self, job_name):
+        log_dir = os.path.join(self._log_directory, job_name)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        return log_dir
+
+    def get_status_filename(self, job_name):
+        return os.path.join(self.get_log_dir(job_name), "__STATUS")
+
+    def set_status(self, job_name, status):
+        with io.open(self.get_status_filename(job_name), "wb") as fh:
+            fh.write("%s---%s" % (arrow.utcnow().isoformat(), status.upper()))
+
+    def get_status(self, job_name):
+        with io.open(self.get_status_filename(job_name), "rb") as fh:
+            time, status = fh.readline().split("---")
+        time = arrow.get(time)
+
+        # Update in case status is running.
+        if status.upper() == "RUNNING":
+            status = self._get_status(job_name, self.get_log_dir(job_name))
+            time = arrow.utcnow()
+            self.set_status(job_name, status)
+        return {"time": time, "status": status}
+
+    @abc.abstractmethod
+    def _get_status(self, job_name, log_dir):
+        pass
+
+    def run_ses3d(self, job_name, cpu_count):
+        self.set_status(job_name, "RUNNING")
+        self._run_ses3d(job_name=job_name, log_dir=self.get_log_dir(job_name),
+                        cpu_count=cpu_count)
+
+    @abc.abstractmethod
+    def _run_ses3d(self, job_name, log_dir, cpu_count):
+        pass
 
     def get_new_working_directory(self):
         time_str = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")

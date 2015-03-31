@@ -69,17 +69,41 @@ class Config(object):
             os.makedirs(self.model_dir)
         if not os.path.exists(self.waveform_dir):
             os.makedirs(self.waveform_dir)
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
 
         if self.site_name not in available_sites:
             raise ValueError("Site '%s' is not available. Available sites: %s"
                              % sorted(available_sites.keys()))
 
         self.site = available_sites[self.site_name](
-            working_directory=self.root_working_dir)
+            working_directory=self.root_working_dir,
+            log_directory=self.log_dir)
+
+    def list_runs(self):
+        build_dirs = set(
+            [_i for _i in os.listdir(self.root_working_dir)
+             if not _i.startswith("__") and
+             os.path.isdir(os.path.join(self.root_working_dir, _i))])
+        available_logs = set(os.listdir(self.log_dir))
+
+        # Anything that has a log folder is a valid run. A build dir without a
+        # corresponding log file is dangerous.
+        diff = build_dirs.difference(available_logs)
+        for d in diff:
+            click.secho("Folder '%s' has no corresponding log entry. "
+                        "Please remove the folder." % os.path.abspath(
+                        os.path.join(self.root_working_dir, d)),
+                        fg="red")
+        return sorted(available_logs)
 
     @property
     def model_dir(self):
         return os.path.join(self.root_working_dir, "__MODELS")
+
+    @property
+    def log_dir(self):
+        return os.path.join(self.root_working_dir, "__LOGS")
 
     @property
     def waveform_dir(self):
@@ -104,11 +128,6 @@ class Config(object):
             py = int(fh.readline().strip())
             pz = int(fh.readline().strip())
         return {"px": px, "py": py, "pz": pz}
-
-    def list_runs(self):
-        return [_i for _i in os.listdir(self.root_working_dir) if
-                os.path.isdir(os.path.join(self.root_working_dir, _i)) and not
-                _i.startswith("_")]
 
     def __str__(self):
         ret_str = (
@@ -237,7 +256,8 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit):
     waveform_folder = os.path.join(config.waveform_dir, run_name)
     if not os.path.exists(waveform_folder):
         os.makedirs(waveform_folder)
-    waveform_folder = os.path.relpath(waveform_folder, cwd)
+    waveform_folder = os.path.relpath(waveform_folder,
+                                      os.path.join(cwd, "MAIN"))
 
     input_files.write(
         output_folder=input_file_dir,
@@ -249,6 +269,9 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit):
     if os.path.exists(model_folder):
         shutil.rmtree(model_folder)
     shutil.copytree(config.get_model_path(model), model_folder)
+
+    _progress("Launching SES3D on %i cores ..." % 4)
+    config.site.run_ses3d(job_name=run_name, cpu_count=4)
 
 
 @cli.command()
@@ -308,3 +331,15 @@ def list_runs(config):
         return
     for run in sorted(runs):
         click.echo("\t%s" % run)
+
+
+@cli.command()
+@pass_config
+def status(config):
+    """
+    Print the status of any runs.
+    """
+    for run in config.list_runs():
+        status = config.site.get_status(run)
+        click.echo("%s\tStatus: %s\t\t updated %s" % (
+                   run, status["status"], status["time"].humanize()))

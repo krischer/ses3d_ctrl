@@ -239,7 +239,8 @@ class SES3DInputFiles(object):
             shutil.copy(contents["receiver_file"], filename)
 
             event = copy.deepcopy(contents["contents"])
-            event["output_directory"] = waveform_output_folder
+            event["output_directory"] = os.path.join(waveform_output_folder,
+                                                     event_name)
 
             # Write the event_file.
             filename = os.path.join(output_folder, "event_%s" % event_name)
