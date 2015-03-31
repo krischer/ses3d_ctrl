@@ -54,7 +54,7 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
 
     def get_new_working_directory(self):
         time_str = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
-        directory = "%s_%s" % (time_str, str(uuid.uuid4()))
+        directory = "%s_%s" % (time_str, str(uuid.uuid4()).split("-")[0])
         directory = os.path.join(self.working_dir, directory)
         if not os.path.exists(directory):
             os.makedirs(directory)

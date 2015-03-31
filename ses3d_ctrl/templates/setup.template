@@ -1,0 +1,22 @@
+MODEL =====================================================================================================================================
+{theta_min:f}                               ! theta_min (colatitude) in degrees
+{theta_max:f}                               ! theta_max (colatitude) in degrees
+{phi_min:f}                                 ! phi_min (longitude) in degrees
+{phi_max:f}                                 ! phi_max (longitude) in degrees
+{z_min:f}                                   ! z_min (radius) in m
+{z_max:f}                                   ! z_max (radius) in m
+{is_diss:d}                                 ! is_diss
+{model_type:d}                              ! model_type (1=homogeneous, 2=prem_iso, 4=eu_bg, 7=ak135)
+COMPUTATIONAL SETUP (PARALLELISATION) =====================================================================================================
+{nx_global:d}                               ! nx_global, (nx_global+px = global # elements in theta direction)
+{ny_global:d}                               ! ny_global, (ny_global+py = global # elements in phi direction)
+{nz_global:d}                               ! nz_global, (nz_global+pz = global # of elements in r direction)
+{lpd:d}                                     ! lpd, LAGRANGE polynomial degree
+{px:d}                                      ! px, processors in theta direction
+{py:d}                                      ! py, processors in phi direction
+{pz:d}                                      ! pz, processors in r direction
+ADJOINT PARAMETERS ========================================================================================================================
+{adjoint_flag:d}                            ! adjoint_flag (0=normal simulation, 1=adjoint forward, 2=adjoint reverse)
+{samp_ad:d}                                 ! samp_ad, sampling rate of forward field
+{adjoint_folder}
+

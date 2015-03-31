@@ -1,8 +1,12 @@
+import copy
 import glob
 import io
 import os
+import shutil
 
 import numpy as np
+
+from . import utils
 
 
 class SES3DInputFiles(object):
@@ -38,6 +42,8 @@ class SES3DInputFiles(object):
                              "match.")
 
         self.stf = self.parse_stf(files["stf"])
+        self.relaxation_times, self.relaxation_weights = \
+            self.parse_relax(files["relax"])
 
         self.events = \
             {name: {"filename": filename,
@@ -123,3 +129,67 @@ class SES3DInputFiles(object):
 
     def parse_stf(self, filename):
         return np.loadtxt(filename, dtype=np.float64)
+
+    def parse_relax(self, filename):
+        with io.open(filename, "rt") as fh:
+            fh.readline()
+            relaxation_times = [float(fh.readline()) for _ in range(3)]
+            fh.readline()
+            weights = [float(fh.readline()) for _ in range(3)]
+        return np.array(relaxation_times), np.array(weights)
+
+    def write(self, output_folder, waveform_output_folder,
+              adjoint_output_folder):
+        # Assert the folder exists, but that it is empty.
+        if not os.path.exists(output_folder):
+            raise ValueError("Folder '%s' does not exist" % output_folder)
+
+        if os.listdir(output_folder):
+            raise ValueError("Folder '%s' is not empty" % output_folder)
+
+        # Write the stf.
+        output = ["#"] * 4
+        output.extend(["%e" for _i in self.stf])
+        output.append("")
+        with io.open(os.path.join(output_folder, "stf"), "wt") as fh:
+            fh.write("\n".join(output))
+
+        # Write the relaxation parameters.
+        with io.open(utils.get_template("relax"), "rt") as fh:
+            with io.open(os.path.join(output_folder, "relax"), "wt") as fh2:
+                fh2.write(fh.read().format(
+                    relaxation_times="\n".join(
+                        map(str, self.relaxation_times)),
+                    weights="\n".join(map(str, self.relaxation_weights))
+                ))
+
+        # Write setup.
+        setup = copy.deepcopy(self.setup)
+        setup["adjoint_folder"] = adjoint_output_folder
+
+        with io.open(utils.get_template("setup"), "rt") as fh:
+            with io.open(os.path.join(output_folder, "setup"), "wt") as fh2:
+                fh2.write(fh.read().format(**setup))
+
+        # Write the event and receiver files.
+        for event_name, contents in self.events.items():
+            # Copy the receiver file.
+            filename = os.path.join(output_folder, "recfile_%s" % event_name)
+            shutil.copy(contents["receiver_file"], filename)
+
+            event = copy.deepcopy(contents["contents"])
+            event["output_directory"] = waveform_output_folder
+
+            # Write the event_file.
+            filename = os.path.join(output_folder, "event_%s" % event_name)
+            with io.open(utils.get_template("event"), "rt") as fh:
+                with io.open(filename, "wt") as fh2:
+                    fh2.write(fh.read().format(**event))
+
+        # Write the event_list file.
+        with io.open(os.path.join(output_folder, "event_list"), "wt") as fh:
+            fh.write("%i                   ! n_events = number of events\n" %
+                     len(self.events))
+            for name in self.events.keys():
+                fh.write("%s\n" % name)
+            fh.write("\n")

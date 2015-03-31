@@ -19,9 +19,9 @@ CONFIG_FILE_PATH = os.path.expanduser("~/.ses3d_ctrl.json")
 
 DEFAULT_CONFIG = {
     "root_working_dir": "~/ses3d_ctrl_working_directory",
+    "adjoint_dir": "/tmp/SES3D_TEMP_ADJOINT",
     "site_name": "local_gcc"
 }
-
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 SES3D_PATH = os.path.join(DATA_DIR, "ses3d_r07_b.tgz")
@@ -39,6 +39,9 @@ def _read_config_file():
     for key, value in data.items():
         if isinstance(value, str):
             data[key] = os.path.expanduser(os.path.expandvars(value))
+
+    if not os.path.exists(data["adjoint_dir"]):
+        os.makedirs(data["adjoint_dir"])
     return data
 
 
@@ -64,6 +67,8 @@ class Config(object):
             os.makedirs(self.root_working_dir)
         if not os.path.exists(self.model_dir):
             os.makedirs(self.model_dir)
+        if not os.path.exists(self.waveform_dir):
+            os.makedirs(self.waveform_dir)
 
         if self.site_name not in available_sites:
             raise ValueError("Site '%s' is not available. Available sites: %s"
@@ -75,6 +80,10 @@ class Config(object):
     @property
     def model_dir(self):
         return os.path.join(self.root_working_dir, "__MODELS")
+
+    @property
+    def waveform_dir(self):
+        return os.path.join(self.root_working_dir, "__WAVEFORMS")
 
     def list_models(self):
         return [_i for _i in os.listdir(self.model_dir)
@@ -153,7 +162,8 @@ def run(config, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
 
     # Get a new working directory.
     cwd = config.site.get_new_working_directory()
-    _progress("Initializing run '%s' ..." % os.path.basename(cwd))
+    run_name = os.path.basename(cwd)
+    _progress("Initializing run '%s' ..." % run_name)
 
     # Untar SES3D to that working directory.
     _progress("Extracting SES3D ...")
@@ -181,6 +191,24 @@ def run(config, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
         nz_max=s["nz_global"] // s["pz"],
         maxnt=input_files.max_nt, maxnr=input_files.max_receivers,
         lpd=lpd, fw_lpd=fw_lpd, pml_count=pml_count, pml_limit=pml_limit)
+
+    _progress("Copying input files ...")
+
+    input_file_dir = os.path.join(cwd, "INPUT")
+    if os.path.exists(input_file_dir):
+        shutil.rmtree(input_file_dir)
+    os.makedirs(input_file_dir)
+
+    # Directory where the waveforms will be stored. Must be relative for SES3D.
+    waveform_folder = os.path.join(config.waveform_dir, run_name)
+    if not os.path.exists(waveform_folder):
+        os.makedirs(waveform_folder)
+    waveform_folder = os.path.relpath(waveform_folder, cwd)
+
+    input_files.write(
+        output_folder=input_file_dir,
+        waveform_output_folder=waveform_folder,
+        adjoint_output_folder=os.path.abspath(config.adjoint_dir))
 
 
 @cli.command()
