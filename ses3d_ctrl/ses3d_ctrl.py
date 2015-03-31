@@ -94,6 +94,17 @@ class Config(object):
             raise ValueError("Model %s not found" % name)
         return os.path.join(self.model_dir, name)
 
+    def get_model_settings(self, name):
+        path = self.get_model_path(name)
+        boxfile = os.path.join(path, "boxfile")
+        with io.open(boxfile, "rt") as fh:
+            for _ in range(15):
+                fh.readline()
+            px = int(fh.readline().strip())
+            py = int(fh.readline().strip())
+            pz = int(fh.readline().strip())
+        return {"px": px, "py": py, "pz": pz}
+
     def list_runs(self):
         return [_i for _i in os.listdir(self.root_working_dir) if
                 os.path.isdir(os.path.join(self.root_working_dir, _i)) and not
@@ -178,6 +189,10 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit):
     for _i in input_files:
         ip = ip.merge(_i)
     input_files = ip
+
+    # Check the compatibility with the model.
+    m = config.get_model_settings(model)
+    input_files.check_model_compatibility(**m)
 
     # Get a new working directory.
     cwd = config.site.get_new_working_directory()

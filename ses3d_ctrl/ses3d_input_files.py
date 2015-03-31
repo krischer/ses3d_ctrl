@@ -104,6 +104,30 @@ class SES3DInputFiles(object):
     def max_receivers(self):
         return max([_i["receiver_count"] for _i in self.events.values()])
 
+    def check_model_compatibility(self, px, py, pz):
+        """
+        Checks the compatibility of a given model with the input files.
+
+        :param px: number of processors in x direction
+        :param py: number of processors in y direction
+        :param pz: number of processors in z direction
+        """
+        if px != self.setup["px"]:
+            raise ValueError(
+                "Model requires %i processors in x direction, "
+                "input files specify %i." % (px, self.setup["px"]))
+
+        if py != self.setup["py"]:
+            raise ValueError(
+                "Model requires %i processors in y direction, "
+                "input files specify %i." % (py, self.setup["py"]))
+
+        if pz != self.setup["pz"]:
+            raise ValueError(
+                "Model requires %i processors in z direction, "
+                "input files specify %i." % (pz, self.setup["pz"]))
+
+
     def _parse_input_file(self, filename, contents):
         values = {}
         idx = 0
