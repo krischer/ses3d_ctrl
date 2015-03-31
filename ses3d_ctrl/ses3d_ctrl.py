@@ -230,15 +230,27 @@ def run(config, model, input_files_folder, lpd, fw_lpd, pml_count, pml_limit):
 
 
 @cli.command()
+@click.argument("model-name", type=str)
+@pass_config
+def remove_model(config, model_name):
+    """
+    Delete a model.
+    """
+    shutil.rmtree(config.get_model_path(model_name.lower()))
+
+
+@cli.command()
+@click.option("--name", type=str, required=True,
+              help="Case insensitive name of the model")
 @click.argument("model_folder",
                 type=click.Path(exists=True, readable=True, resolve_path=True,
                                 dir_okay=True))
 @pass_config
-def add_model(config, model_folder):
+def add_model(config, name, model_folder):
     """
     Add a model to SES3D ctrl.
     """
-    model_name = os.path.basename(model_folder).lower()
+    model_name = name.lower().replace(" ", "_")
     if model_name in config.list_models():
         raise ValueError("Model '%s' already exists" % model_name)
     # Assert the folder has a boxfile.
