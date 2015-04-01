@@ -12,6 +12,7 @@ import sys
 import tarfile
 
 from .sites import available_sites
+from .sites.site_config import Status
 from .ses3d_input_files import SES3DInputFiles
 
 
@@ -346,7 +347,7 @@ def status(config):
     for run in config.list_runs():
         status = config.site.get_status(run)
         click.echo(line_fmt.format(
-            job_number=run, status=status["status"],
+            job_number=run, status=status["status"].name.upper(),
             updated=status["time"].humanize()))
 
 
@@ -369,8 +370,8 @@ def clean(config):
     Delete all traces of jobs that are neither running nor finished.
     """
     for run in config.list_runs():
-        status = config.site.get_status(run)["status"].upper()
-        if status == "RUNNING" or status == "FINISHED":
+        status = config.site.get_status(run)["status"]
+        if status == Status.running or status == Status.finished:
             continue
 
         potential_folders = [
@@ -394,8 +395,8 @@ def tail(config):
     """
     all_files = []
     for run in config.list_runs():
-        status = config.site.get_status(run)["status"].upper()
-        if status != "RUNNING":
+        status = config.site.get_status(run)["status"]
+        if status != Status.running:
             continue
         all_files.append(config.site.get_stdout_file(run))
         all_files.append(config.site.get_stderr_file(run))
