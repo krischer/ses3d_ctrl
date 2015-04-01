@@ -62,7 +62,7 @@ class SuperMuc(SiteConfig):
             raise JobNotFoundError("Job not found")
 
         if status == "I":
-            status = Status.unknown
+            status = Status.waiting
         elif status == "R":
             status = Status.running
         else:
@@ -72,9 +72,13 @@ class SuperMuc(SiteConfig):
         return {"status": status, "job_id": job_id}
 
     def _get_status(self, job_name):
-        # First check if the job is done by reading stdout file.
-        if self._stdout_inidicates_job_finished(job_name):
-            return Status.finished
+        # First check if the job is done by reading stdout file. The file
+        # might not yet exists, thus catch an IOError.
+        try:
+            if self._stdout_inidicates_job_finished(job_name):
+                return Status.finished
+        except IOError:
+            pass
 
         try:
             info = self.get_job_info(job_name)

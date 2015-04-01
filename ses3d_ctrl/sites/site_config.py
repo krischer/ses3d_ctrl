@@ -192,8 +192,8 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         """
         with io.open(self.get_status_filename(job_name), "rb") as fh:
             time, status = fh.readline().split("---")
-        time = arrow.get(time)
-        status = getattr(Status, status.lower())
+        time = arrow.get(time.strip())
+        status = getattr(Status, status.strip().lower())
 
         # Update in case status is running.
         if status == Status.running:
@@ -232,8 +232,10 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         Gets a new working directory for a job. The name of the directory is
         also the name of the job.
         """
-        time_str = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
+        time_str = datetime.datetime.now().strftime("%y%m%d%H%M")
         directory = "%s_%s" % (time_str, str(uuid.uuid4()).split("-")[0])
+        # Limit to 20 chars.
+        directory = directory[:20]
         directory = os.path.join(self.working_dir, directory)
         if not os.path.exists(directory):
             os.makedirs(directory)
