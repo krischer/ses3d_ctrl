@@ -6,7 +6,10 @@ setup(
     py_modules=["ses3d_ctrl"],
     install_requires=[
         "Click",
-        "six"
+        "six",
+        "arrow",
+        "psutil",
+        "enum34"
     ],
     entry_points="""
         [console_scripts]

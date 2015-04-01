@@ -21,7 +21,8 @@ CONFIG_FILE_PATH = os.path.expanduser("~/.ses3d_ctrl.json")
 DEFAULT_CONFIG = {
     "root_working_dir": "~/ses3d_ctrl_working_directory",
     "adjoint_dir": "/tmp/SES3D_TEMP_ADJOINT",
-    "site_name": "local_gcc"
+    "site_name": "local_gcc",
+    "email": "change_me@www.org"
 }
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
@@ -288,7 +289,8 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit,
 
     _progress("Launching SES3D on %i cores ..." % cpu_count)
     config.site.run_ses3d(job_name=run_name, cpu_count=cpu_count,
-                          wall_time=wall_time_in_hours)
+                          wall_time=wall_time_in_hours,
+                          email=config.email)
 
 
 @cli.command()

@@ -38,6 +38,7 @@ class Status(enum.Enum):
     unknown = 1
     finished = 2
     cancelled = 3
+    waiting = 4
 
 
 class SiteConfig(six.with_metaclass(abc.ABCMeta)):
@@ -98,13 +99,14 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         pass
 
     @abc.abstractmethod
-    def _run_ses3d(self, job_name, cpu_count, wall_time):
+    def _run_ses3d(self, job_name, cpu_count, wall_time, email):
         """
         Launch SES3D for the given job and cpu count.
 
         :param job_name: The name of the job.
         :param cpu_count: The number of CPUs.
         :param wall_time: The wall time in hours.
+        :param email: The email address to send notification to.
         """
         pass
 
@@ -143,6 +145,19 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
     @property
     def working_dir(self):
         return os.path.expandvars(os.path.expanduser(self._working_dir))
+
+    def _stdout_inidicates_job_finished(self, job_name):
+        with open(self.get_stdout_file(job_name), "r") as fh:
+            # Read the last line.
+            fh.seek(-1024, 2)
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                last_line = line
+        if last_line.startswith("SES3D_R07_B: End:"):
+            return True
+        return False
 
     def get_log_dir(self, job_name):
         log_dir = os.path.join(self._log_directory, job_name)
@@ -187,17 +202,18 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
             self.set_status(job_name, status)
         return {"time": time, "status": status}
 
-    def run_ses3d(self, job_name, cpu_count, wall_time):
+    def run_ses3d(self, job_name, cpu_count, wall_time, email):
         """
         Run SES3D on the given number of CPUs.
 
         :param job_name: The name of the job.
         :param cpu_count: The number CPU cores.
         :param wall_time: The wall time in hours.
+        :param email: The email address to send notification to.
         """
         self.set_status(job_name=job_name, status=Status.running)
         self._run_ses3d(job_name=job_name, cpu_count=cpu_count,
-                        wall_time=wall_time)
+                        wall_time=wall_time, email=email)
 
     def cancel_job(self, job_name):
         """

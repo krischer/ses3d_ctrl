@@ -30,7 +30,7 @@ class LocalGCC(SiteConfig):
             else:
                 return Status.unknown
 
-    def _run_ses3d(self, job_name, cpu_count, wall_time):
+    def _run_ses3d(self, job_name, cpu_count, wall_time, email):
         # Adapted from
         # http://code.activestate.com/recipes/
         # 66012-fork-a-daemon-process-on-unix/
@@ -85,19 +85,6 @@ class LocalGCC(SiteConfig):
 
     def get_pid_file(self, job_name):
         return os.path.join(self.get_log_dir(job_name), "PID")
-
-    def _stdout_inidicates_job_finished(self, job_name):
-        with open(self.get_stdout_file(job_name), "r") as fh:
-            # Read the last line.
-            fh.seek(-1024, 2)
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                last_line = line
-        if last_line.startswith("SES3D_R07_B: End:"):
-            return True
-        return False
 
     def _get_pid(self, job_name):
         with open(self.get_pid_file(job_name), "rt") as fh:
