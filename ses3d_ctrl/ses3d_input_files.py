@@ -209,7 +209,7 @@ class SES3DInputFiles(object):
 
         # Write the stf.
         output = ["#"] * 4
-        output.extend(["%e" for _i in self.stf])
+        output.extend(["%e" % _i for _i in self.stf])
         output.append("")
         with io.open(os.path.join(output_folder, "stf"), "wt") as fh:
             fh.write(u"\n".join(output))
