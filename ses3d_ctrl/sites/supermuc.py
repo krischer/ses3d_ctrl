@@ -40,7 +40,6 @@ class SuperMuc(SiteConfig):
         click.echo(subprocess.check_output("llcancel %s" % job_id, shell=True))
         return True
 
-
     def get_job_info(self, job_name):
         """
         Returns some basic information about the job from the load leveller.

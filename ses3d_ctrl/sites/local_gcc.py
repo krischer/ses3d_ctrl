@@ -115,4 +115,3 @@ class LocalGCC(SiteConfig):
             return True
         else:
             raise NotImplementedError("Unknown process status '%s'." % status)
-
