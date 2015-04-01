@@ -46,7 +46,7 @@ def _read_config_file():
 
 
 def _write_default_config_file():
-    with io.open(CONFIG_FILE_PATH, "w") as fh:
+    with io.open(CONFIG_FILE_PATH, "wb") as fh:
         json.dump(DEFAULT_CONFIG, fh,
                   sort_keys=True,
                   indent=4,

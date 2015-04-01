@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import
+
 import abc
 import arrow
 import datetime
@@ -9,8 +11,7 @@ import six
 import subprocess
 import uuid
 
-SES_3D_CONF_TEMPLATE = os.path.join(os.path.dirname(__file__), os.path.pardir,
-                                    "data", "ses3d_conf.h.template")
+from ..utils import get_template
 
 
 SES3D_EXECUTABLE = "MAIN/ses3d"
@@ -30,6 +31,12 @@ SES3D_SOURCES = [
 
 
 class SiteConfig(six.with_metaclass(abc.ABCMeta)):
+    """
+    Abstract base class for a site configuration.
+
+    Subclass this to add support for different computers and machines to
+    SES3D control.
+    """
     executable = os.path.basename(SES3D_EXECUTABLE)
     executable_path = os.path.dirname(SES3D_EXECUTABLE)
 
@@ -39,10 +46,28 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
 
     @abc.abstractproperty
     def mpi_compiler(self):
+        """
+        Name of the MPI compiler.
+        """
         pass
 
     @abc.abstractproperty
     def mpi_compiler_flags(self):
+        """
+        Flags for the MPI compiler.
+        """
+        pass
+
+    @abc.abstractmethod
+    def _get_status(self, job_name):
+        pass
+
+    @abc.abstractmethod
+    def _cancel_job(self, job_name):
+        pass
+
+    @abc.abstractmethod
+    def _run_ses3d(self, job_name, cpu_count):
         pass
 
     @property
@@ -74,10 +99,6 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
             self.set_status(job_name, status)
         return {"time": time, "status": status}
 
-    @abc.abstractmethod
-    def _get_status(self, job_name):
-        pass
-
     def run_ses3d(self, job_name, cpu_count):
         self.set_status(job_name, "RUNNING")
         self._run_ses3d(job_name=job_name, cpu_count=cpu_count)
@@ -85,14 +106,6 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
     def cancel_job(self, job_name):
         self._cancel_job(job_name=job_name)
         self.set_status(job_name=job_name, status="CANCELLED")
-
-    @abc.abstractmethod
-    def _cancel_job(self, job_name):
-        pass
-
-    @abc.abstractmethod
-    def _run_ses3d(self, job_name, cpu_count):
-        pass
 
     def get_new_working_directory(self):
         time_str = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
@@ -121,7 +134,7 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         # Copy and fill ses3d_conf.h template.
         filename = os.path.join(cwd, "SOURCE", "ses3d_conf.h")
 
-        with io.open(SES_3D_CONF_TEMPLATE, "rt") as fh:
+        with io.open(get_template("ses3d_config"), "rt") as fh:
             with io.open(filename, "wt") as fh2:
                 fh2.write(fh.read().format(
                     NX_MAX=nx_max,
