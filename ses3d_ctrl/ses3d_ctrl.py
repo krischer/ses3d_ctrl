@@ -375,7 +375,7 @@ def clean(config):
 
         potential_folders = [
             os.path.join(config.root_working_dir, run),
-            os.path.join(config.log_dir, run),
+            os.path.join(config.site.get_log_dir(run)),
             os.path.join(config.waveform_dir, run)]
 
         for folder in potential_folders:
@@ -384,3 +384,26 @@ def clean(config):
             if not os.path.isdir(folder):
                 continue
             shutil.rmtree(folder)
+
+
+@cli.command()
+@pass_config
+def tail(config):
+    """
+    Tails the output of running jobs.
+    """
+    all_files = []
+    for run in config.list_runs():
+        status = config.site.get_status(run)["status"].upper()
+        if status != "RUNNING":
+            continue
+        all_files.append(config.site.get_stdout_file(run))
+        all_files.append(config.site.get_stderr_file(run))
+
+    if not all_files:
+        click.echo("No active runs")
+        return
+
+    all_files = [_i for _i in all_files if os.path.exists(_i)]
+
+    os.system("tail -f %s" % " ".join(all_files))

@@ -38,19 +38,11 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         self._log_directory = log_directory
 
     @abc.abstractproperty
-    def compiler(self):
-        pass
-
-    @abc.abstractproperty
     def mpi_compiler(self):
         pass
 
     @abc.abstractproperty
     def mpi_compiler_flags(self):
-        pass
-
-    @abc.abstractproperty
-    def compiler_flags(self):
         pass
 
     @property
@@ -77,30 +69,29 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
 
         # Update in case status is running.
         if status.upper() == "RUNNING":
-            status = self._get_status(job_name, self.get_log_dir(job_name))
+            status = self._get_status(job_name)
             time = arrow.utcnow()
             self.set_status(job_name, status)
         return {"time": time, "status": status}
 
     @abc.abstractmethod
-    def _get_status(self, job_name, log_dir):
+    def _get_status(self, job_name):
         pass
 
     def run_ses3d(self, job_name, cpu_count):
         self.set_status(job_name, "RUNNING")
-        self._run_ses3d(job_name=job_name, log_dir=self.get_log_dir(job_name),
-                        cpu_count=cpu_count)
+        self._run_ses3d(job_name=job_name, cpu_count=cpu_count)
 
     def cancel_job(self, job_name):
-        self._cancel_job(job_name=job_name, log_dir=self.get_log_dir(job_name))
+        self._cancel_job(job_name=job_name)
         self.set_status(job_name=job_name, status="CANCELLED")
 
     @abc.abstractmethod
-    def _cancel_job(self, job_name, log_dir):
+    def _cancel_job(self, job_name):
         pass
 
     @abc.abstractmethod
-    def _run_ses3d(self, job_name, log_dir, cpu_count):
+    def _run_ses3d(self, job_name, cpu_count):
         pass
 
     def get_new_working_directory(self):

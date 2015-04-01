@@ -18,25 +18,17 @@ class LocalGCC(SiteConfig):
     def mpi_compiler_flags(self):
         return ["-std=c99"]
 
-    @property
-    def compiler(self):
-        return "gcc"
+    def get_pid_file(self, job_name):
+        return os.path.join(self.get_log_dir(job_name), "PID")
 
-    @property
-    def compiler_flags(self):
-        return ["-std=c99"]
+    def get_stdout_file(self, job_name):
+        return os.path.join(self.get_log_dir(job_name), "stdout")
 
-    def get_pid_file(self, log_dir):
-        return os.path.join(log_dir, "PID")
+    def get_stderr_file(self, job_name):
+        return os.path.join(self.get_log_dir(job_name), "stderr")
 
-    def get_stdout_file(self, log_dir):
-        return os.path.join(log_dir, "stdout")
-
-    def get_stderr_file(self, log_dir):
-        return os.path.join(log_dir, "stderr")
-
-    def _stdout_inidicates_job_finished(self, log_dir):
-        with open(self.get_stdout_file(log_dir), "r") as fh:
+    def _stdout_inidicates_job_finished(self, job_name):
+        with open(self.get_stdout_file(job_name), "r") as fh:
             # Read the last line.
             fh.seek(-1024, 2)
             for line in fh:
@@ -48,18 +40,18 @@ class LocalGCC(SiteConfig):
             return True
         return False
 
-    def _get_pid(self, log_dir):
-        with open(self.get_pid_file(log_dir), "rt") as fh:
+    def _get_pid(self, job_name):
+        with open(self.get_pid_file(job_name), "rt") as fh:
             return int(fh.readline().strip())
 
-    def _process_is_running(self, job_name, log_dir):
+    def _process_is_running(self, job_name):
         """
         Determines if the process for the given job and log directory is still
         running.
         """
         # Get the job based on the pid.
         try:
-            p = psutil.Process(self._get_pid(log_dir))
+            p = psutil.Process(self._get_pid(job_name))
             status = p.status()
         except psutil.NoSuchProcess:
             return False
@@ -78,28 +70,28 @@ class LocalGCC(SiteConfig):
         else:
             raise NotImplementedError("Unknown process status '%s'." % status)
 
-    def _cancel_job(self, job_name, log_dir):
-        if not self._process_is_running(job_name, log_dir):
+    def _cancel_job(self, job_name):
+        if not self._process_is_running(job_name):
             return
         try:
-            p = psutil.Process(self._get_pid(log_dir))
+            p = psutil.Process(self._get_pid(job_name))
         except psutil.NoSuchProcess:
             return
         p.terminate()
 
-    def _get_status(self, job_name, log_dir):
-        if self._process_is_running(job_name=job_name, log_dir=log_dir):
-            if self._stdout_inidicates_job_finished(log_dir=log_dir):
+    def _get_status(self, job_name):
+        if self._process_is_running(job_name):
+            if self._stdout_inidicates_job_finished(job_name):
                 return "FINISHED"
             else:
                 return "RUNNING"
         else:
-            if self._stdout_inidicates_job_finished(log_dir=log_dir):
+            if self._stdout_inidicates_job_finished(job_name=job_name):
                 return "FINISHED"
             else:
                 return "UNKNOWN"
 
-    def _run_ses3d(self, job_name, log_dir, cpu_count):
+    def _run_ses3d(self, job_name, cpu_count):
         # Adapted from
         # http://code.activestate.com/recipes/
         # 66012-fork-a-daemon-process-on-unix/
@@ -131,14 +123,14 @@ class LocalGCC(SiteConfig):
             sys.exit(1)
 
         # start the daemon main loop
-        with io.open(self.get_stdout_file(log_dir), "wb") as stdout:
-            with io.open(self.get_stderr_file(log_dir), "wb") as stderr:
+        with io.open(self.get_stdout_file(job_name), "wb") as stdout:
+            with io.open(self.get_stderr_file(job_name), "wb") as stderr:
                 p = subprocess.Popen(
                     ["mpirun", "-n", str(cpu_count), self.executable],
                     cwd=os.path.join(self.working_dir, job_name,
                                      self.executable_path),
                     stdout=stdout, stderr=stderr)
 
-        pid_file = self.get_pid_file(log_dir)
+        pid_file = self.get_pid_file(job_name)
         with open(pid_file, "wt") as fh:
             fh.write(str(p.pid))
