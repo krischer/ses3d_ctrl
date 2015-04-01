@@ -337,17 +337,26 @@ def list_runs(config):
 @pass_config
 def status(config):
     """
-    Print the status of any runs.
+    Print the status of all runs.
     """
+    line_fmt = "{job_number:35s}{status:20s}{updated:25s}"
+    click.echo(line_fmt.format(
+        job_number="JOB NUMBER", status="STATUS", updated="UPDATED"))
+    click.echo("=" * 80)
     for run in config.list_runs():
         status = config.site.get_status(run)
-        click.echo("%s\tStatus: %s\t\t updated %s" % (
-                   run, status["status"], status["time"].humanize()))
+        click.echo(line_fmt.format(
+            job_number=run, status=status["status"],
+            updated=status["time"].humanize()))
+
 
 @cli.command()
 @pass_config
 @click.argument("job-number", type=str)
 def cancel(config, job_number):
+    """
+    Cancel a certain job.
+    """
     if job_number not in config.list_runs():
         raise ValueError("Job not known")
     config.site.cancel_job(job_number)
