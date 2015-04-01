@@ -416,8 +416,8 @@ def tail(config):
         status = config.site.get_status(run)["status"]
         if status != Status.running:
             continue
-        all_files.append(config.site.get_stdout_file(run))
         all_files.append(config.site.get_stderr_file(run))
+        all_files.append(config.site.get_stdout_file(run))
 
     if not all_files:
         click.echo("No active runs")
