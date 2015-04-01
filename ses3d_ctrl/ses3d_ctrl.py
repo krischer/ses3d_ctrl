@@ -93,7 +93,7 @@ class Config(object):
         for d in diff:
             click.secho("Folder '%s' has no corresponding log entry. "
                         "Please remove the folder." % os.path.abspath(
-                        os.path.join(self.root_working_dir, d)),
+                            os.path.join(self.root_working_dir, d)),
                         fg="red")
         return sorted(available_logs)
 
@@ -360,3 +360,27 @@ def cancel(config, job_number):
     if job_number not in config.list_runs():
         raise ValueError("Job not known")
     config.site.cancel_job(job_number)
+
+
+@cli.command()
+@pass_config
+def clean(config):
+    """
+    Delete all traces of jobs that are neither running nor finished.
+    """
+    for run in config.list_runs():
+        status = config.site.get_status(run)["status"].upper()
+        if status == "RUNNING" or status == "FINISHED":
+            continue
+
+        potential_folders = [
+            os.path.join(config.root_working_dir, run),
+            os.path.join(config.log_dir, run),
+            os.path.join(config.waveform_dir, run)]
+
+        for folder in potential_folders:
+            if not os.path.exists(folder):
+                continue
+            if not os.path.isdir(folder):
+                continue
+            shutil.rmtree(folder)

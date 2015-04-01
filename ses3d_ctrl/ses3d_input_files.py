@@ -127,7 +127,6 @@ class SES3DInputFiles(object):
                 "Model requires %i processors in z direction, "
                 "input files specify %i." % (pz, self.setup["pz"]))
 
-
     def _parse_input_file(self, filename, contents):
         values = {}
         idx = 0

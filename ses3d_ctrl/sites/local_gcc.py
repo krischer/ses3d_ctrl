@@ -70,7 +70,7 @@ class LocalGCC(SiteConfig):
 
         # Make sure it has the correct working dir.
         if p.getcwd() != os.path.join(self.working_dir, job_name,
-                self.executable_path):
+                                      self.executable_path):
             return False
 
         if status == "running":
@@ -142,4 +142,3 @@ class LocalGCC(SiteConfig):
         pid_file = self.get_pid_file(log_dir)
         with open(pid_file, "wt") as fh:
             fh.write(str(p.pid))
-
