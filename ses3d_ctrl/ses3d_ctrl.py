@@ -189,9 +189,14 @@ def _progress(msg):
               help="Number of PMLs at each boundary.")
 @click.option("--pml-limit", type=int, default=10000, show_default=True,
               help="Number of time steps for which PMLs are enabled.")
+@click.option("--parallel-events", type=int, default=1, show_default=True,
+              help="The number of events to run in parallel.")
+@click.option("--wall-time-per-event", type=float, default=0.5,
+              help="Wall time per event in hours. Only needed for some sites.")
 @click.argument("input_files_folders", type=click.Path(), nargs=-1)
 @pass_config
-def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit):
+def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit,
+        wall_time_per_event, parallel_events):
     """
     Run a simulation for the chosen input files. If multiple input file folders
     are given, they will be merged.
@@ -213,6 +218,17 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit):
     # Check the compatibility with the model.
     m = config.get_model_settings(model)
     input_files.check_model_compatibility(**m)
+
+    if len(input_files.events) % parallel_events != 0:
+        raise ValueError("The total number of events must be a multiple of "
+                         "the number of parallel events.")
+
+    # Now we now the total number of events, let's calculate the total wall
+    # time and the number of CPUs required.
+    s = input_files.setup
+    wall_time_in_hours = wall_time_per_event * \
+        float(len(input_files.events)) / float(parallel_events)
+    cpu_count = s["px"] * s["py"] * s["pz"] * parallel_events
 
     # Get a new working directory.
     cwd = config.site.get_new_working_directory()
@@ -237,7 +253,6 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit):
             fh.extract(member, cwd)
 
     _progress("Compiling SES3D ...")
-    s = input_files.setup
     config.site.compile_ses3d(
         cwd=cwd,
         nx_max=s["nx_global"] // s["px"],
@@ -271,8 +286,9 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit):
         shutil.rmtree(model_folder)
     shutil.copytree(config.get_model_path(model), model_folder)
 
-    _progress("Launching SES3D on %i cores ..." % 4)
-    config.site.run_ses3d(job_name=run_name, cpu_count=4)
+    _progress("Launching SES3D on %i cores ..." % cpu_count)
+    config.site.run_ses3d(job_name=run_name, cpu_count=cpu_count,
+                          wall_time=wall_time_in_hours)
 
 
 @cli.command()

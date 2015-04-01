@@ -98,15 +98,14 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         pass
 
     @abc.abstractmethod
-    def _run_ses3d(self, job_name, cpu_count):
+    def _run_ses3d(self, job_name, cpu_count, wall_time):
         """
         Launch SES3D for the given job and cpu count.
 
         :param job_name: The name of the job.
         :param cpu_count: The number of CPUs.
+        :param wall_time: The wall time in hours.
         """
-        pass
-
         pass
 
     def get_stdout_file(self, job_name):
@@ -188,15 +187,17 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
             self.set_status(job_name, status)
         return {"time": time, "status": status}
 
-    def run_ses3d(self, job_name, cpu_count):
+    def run_ses3d(self, job_name, cpu_count, wall_time):
         """
         Run SES3D on the given number of CPUs.
 
         :param job_name: The name of the job.
         :param cpu_count: The number CPU cores.
+        :param wall_time: The wall time in hours.
         """
         self.set_status(job_name=job_name, status=Status.running)
-        self._run_ses3d(job_name=job_name, cpu_count=cpu_count)
+        self._run_ses3d(job_name=job_name, cpu_count=cpu_count,
+                        wall_time=wall_time)
 
     def cancel_job(self, job_name):
         """

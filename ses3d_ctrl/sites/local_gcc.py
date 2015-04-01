@@ -30,7 +30,7 @@ class LocalGCC(SiteConfig):
             else:
                 return Status.unknown
 
-    def _run_ses3d(self, job_name, cpu_count):
+    def _run_ses3d(self, job_name, cpu_count, wall_time):
         # Adapted from
         # http://code.activestate.com/recipes/
         # 66012-fork-a-daemon-process-on-unix/
