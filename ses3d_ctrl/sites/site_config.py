@@ -107,23 +107,39 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         """
         pass
 
-    @abc.abstractmethod
+        pass
+
     def get_stdout_file(self, job_name):
         """
         Return the filename where stdout is piped to.
 
+        In the future this might need to become an abstract method with
+        implementation in the subclasses.
+
         :param job_name: The name of the job.
         """
-        pass
+        return os.path.join(self.get_log_dir(job_name), "stdout")
 
-    @abc.abstractmethod
     def get_stderr_file(self, job_name):
         """
         Return the filename where stderr is piped to.
 
+        In the future this might need to become an abstract method with
+        implementation in the subclasses.
+
         :param job_name: The name of the job.
         """
-        pass
+        return os.path.join(self.get_log_dir(job_name), "stderr")
+
+    def get_ses3d_run_dir(self, job_name):
+        """
+        Returns the MAIN directory of SES3D where the executable should be
+        launched from.
+
+        :param job_name: The name of the job.
+        """
+        return os.path.join(self.working_dir, job_name,
+                            self.executable_path)
 
     @property
     def working_dir(self):

@@ -1,0 +1,25 @@
+#!/bin/bash
+##
+## optional: energy policy tags
+##
+# DO NOT USE environment = COPY_ALL
+#@ job_type = MPICH
+#@ class = {job_class}
+### schedule the job to 2 to 4 islands
+#@ island_count=1
+#@ total_tasks= {number_of_cores}
+#@ wall_clock_limit = {wall_time}
+#@ job_name = {job_name}
+#@ network.MPI = sn_all,not_shared,us
+#@ initialdir = {initial_dir}
+#@ output = {stdout}
+#@ error = {stderr}
+#@ notification=always
+#@ notify_user={email}
+#@ queue
+. /etc/profile
+. /etc/profile.d/modules.sh
+#setup of environment
+module unload mpi.ibm
+module load mpi.intel
+mpiexec -n {number_of_cores} {executable}

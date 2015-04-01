@@ -66,8 +66,7 @@ class LocalGCC(SiteConfig):
             with io.open(self.get_stderr_file(job_name), "wb") as stderr:
                 p = subprocess.Popen(
                     ["mpirun", "-n", str(cpu_count), self.executable],
-                    cwd=os.path.join(self.working_dir, job_name,
-                                     self.executable_path),
+                    cwd=self.get_ses3d_run_dir(job_name),
                     stdout=stdout, stderr=stderr)
 
         pid_file = self.get_pid_file(job_name)
@@ -86,12 +85,6 @@ class LocalGCC(SiteConfig):
 
     def get_pid_file(self, job_name):
         return os.path.join(self.get_log_dir(job_name), "PID")
-
-    def get_stdout_file(self, job_name):
-        return os.path.join(self.get_log_dir(job_name), "stdout")
-
-    def get_stderr_file(self, job_name):
-        return os.path.join(self.get_log_dir(job_name), "stderr")
 
     def _stdout_inidicates_job_finished(self, job_name):
         with open(self.get_stdout_file(job_name), "r") as fh:
