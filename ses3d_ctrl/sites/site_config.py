@@ -91,6 +91,14 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         self._run_ses3d(job_name=job_name, log_dir=self.get_log_dir(job_name),
                         cpu_count=cpu_count)
 
+    def cancel_job(self, job_name):
+        self._cancel_job(job_name=job_name, log_dir=self.get_log_dir(job_name))
+        self.set_status(job_name=job_name, status="CANCELLED")
+
+    @abc.abstractmethod
+    def _cancel_job(self, job_name, log_dir):
+        pass
+
     @abc.abstractmethod
     def _run_ses3d(self, job_name, log_dir, cpu_count):
         pass

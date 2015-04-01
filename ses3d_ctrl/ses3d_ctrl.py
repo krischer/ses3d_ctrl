@@ -343,3 +343,11 @@ def status(config):
         status = config.site.get_status(run)
         click.echo("%s\tStatus: %s\t\t updated %s" % (
                    run, status["status"], status["time"].humanize()))
+
+@cli.command()
+@pass_config
+@click.argument("job-number", type=str)
+def cancel(config, job_number):
+    if job_number not in config.list_runs():
+        raise ValueError("Job not known")
+    config.site.cancel_job(job_number)
