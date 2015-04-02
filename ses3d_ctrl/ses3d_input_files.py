@@ -38,8 +38,15 @@ class SES3DInputFiles(object):
                     for _i in recfiles}
 
         if set(events.keys()) != set(recfiles.keys()):
+            ev = set(events.keys())
+            re = set(recfiles.keys())
+
+            diff = ev - re
+            diff = diff.union(re - ev)
+
             raise ValueError("Event and receiver files in folder '%s' don't "
-                             "match.")
+                             "match. Mismatched items: \n%s" % (
+                folder, "\n".join([" * %s" % _i for _i in diff])))
 
         self.stf = self.parse_stf(files["stf"])
         self.relaxation_times, self.relaxation_weights = \
@@ -251,6 +258,6 @@ class SES3DInputFiles(object):
         with io.open(os.path.join(output_folder, "event_list"), "wt") as fh:
             fh.write(u"%i                   ! n_events = number of events\n" %
                      len(self.events))
-            for name in self.events.keys():
+            for name in sorted(self.events.keys()):
                 fh.write(u"%s\n" % name)
             fh.write(u"\n")

@@ -271,7 +271,12 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
                     MAXNT=maxnt,
                     MAXNR=maxnr,
                     PML=pml_count,
-                    PML_LIMIT=pml_limit))
+                    PML_LIMIT=pml_limit,
+                    # Increase the limits a bit as LASIF likes verbose event
+                    # names.
+                    MAXSTR=255,
+                    MAXFN=511
+                ))
 
         args = [self.mpi_compiler]
         args.extend(self.mpi_compiler_flags)

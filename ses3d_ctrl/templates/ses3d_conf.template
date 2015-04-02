@@ -63,7 +63,7 @@
 
 // standard sizes
 
-#define MAXSTR 63
-#define MAXFN 255
+#define MAXSTR {MAXSTR:d}
+#define MAXFN {MAXFN:d}
 
 #endif    // _SES3D_CONF_H_
