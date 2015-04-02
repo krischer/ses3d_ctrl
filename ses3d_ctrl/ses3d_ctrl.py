@@ -383,6 +383,27 @@ def cancel(config, job_number):
 
 @cli.command()
 @pass_config
+@click.argument("job-name", type=str)
+def force_remove_job(config, job_name):
+    """
+    Forcefully removes everything from a job regardless no matter if its still
+    running or not.
+    """
+    if job_name not in config.list_runs():
+        raise ValueError("Job not known.")
+    log_dir = config.site.get_log_dir(job_name)
+    waveform_dir = os.path.join(config.waveform_dir, job_name)
+    job_dir = os.path.join(config.root_working_dir, job_name)
+    if os.path.exists(log_dir):
+        shutil.rmtree(log_dir)
+    if os.path.exists(waveform_dir):
+        shutil.rmtree(waveform_dir)
+    if os.path.exists(job_dir):
+        shutil.rmtree(job_dir)
+
+
+@cli.command()
+@pass_config
 def clean(config):
     """
     Delete all traces of jobs that are neither running nor finished.

@@ -46,7 +46,8 @@ class SES3DInputFiles(object):
 
             raise ValueError("Event and receiver files in folder '%s' don't "
                              "match. Mismatched items: \n%s" % (
-                folder, "\n".join([" * %s" % _i for _i in diff])))
+                                folder,
+                                "\n".join([" * %s" % _i for _i in diff])))
 
         self.stf = self.parse_stf(files["stf"])
         self.relaxation_times, self.relaxation_weights = \
