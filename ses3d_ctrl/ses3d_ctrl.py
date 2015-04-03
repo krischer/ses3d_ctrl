@@ -171,12 +171,16 @@ def info(config):
     click.echo(config)
 
 
-def _progress(msg):
+def _progress(msg, warn=False):
     """
     Consistent and "pretty" progress logs.
     """
-    click.echo(click.style(" -> ", fg="red"), nl=False)
-    click.echo(click.style(msg, fg="green"))
+    click.echo(click.style(" -> ", fg="blue"), nl=False)
+    if warn:
+        fg = "red"
+    else:
+        fg = "green"
+    click.echo(click.style(msg, fg=fg))
 
 
 @cli.command()
@@ -487,3 +491,71 @@ def ls_output(config, n):
     contents = sorted(os.listdir(waveform_folder))
     for _i in contents:
         click.echo("\t%s" % os.path.join(waveform_folder, _i))
+
+
+@cli.command()
+@click.option('--compress', is_flag=True,
+              help="Optionally compress (gzip level 1) the data. Slower but "
+                   "results in smaller files.")
+@pass_config
+def tar_waveforms(config, compress):
+    """
+    Tar the resulting waveforms of the finished run.
+    """
+    runs = []
+    for run in config.list_runs():
+        status = config.site.get_status(run)["status"]
+        # Only consider finished jobs.
+        if status != Status.finished:
+            continue
+        waveform_folder = os.path.join(config.waveform_dir, run)
+
+        # Either plain tar or tar.gz file.
+        tar_filename = os.path.join(config.waveform_dir, "%s.tar" % run)
+        tar_gz_filename = os.path.join(config.waveform_dir, "%s.tar.gz" % run)
+
+        if os.path.exists(tar_filename) or os.path.exists(tar_gz_filename) \
+                or not os.path.exists(waveform_folder):
+            continue
+
+        if compress:
+            filename = tar_gz_filename
+        else:
+            filename = tar_filename
+
+        runs.append((run, waveform_folder, filename))
+
+    for _i, run in enumerate(runs):
+        if _i:
+            click.echo("\n")
+        _progress("Tarring waveforms for run %i of %i ..." % (_i + 1,
+                                                              len(runs)))
+
+        # First find all files to be able to have a nice progressbar.
+        all_files = []
+        for root, _, files in os.walk(run[1]):
+            if not files:
+                continue
+            for filename in files:
+                all_files.append(os.path.join(root, filename))
+
+        if not all_files:
+            _progress("No files found. No archive will be created.", warn=True)
+            continue
+
+        relpath = os.path.join(config.waveform_dir, run[0])
+
+        if compress:
+            # This still compress quite a bit but takes much less
+            # computations time so probably worth it.
+            flags = {"mode": "w:gz", "compresslevel": 1}
+        else:
+            flags = {"mode": "w"}
+
+
+        with click.progressbar(all_files) as files:
+            with tarfile.open(run[2], **flags) as tf:
+                for filename in files:
+                    tf.add(filename,
+                           arcname=os.path.relpath(filename, relpath))
+        _progress("Created archive %s" % run[2])
