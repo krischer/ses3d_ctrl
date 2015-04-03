@@ -279,7 +279,8 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit,
     input_files.write(
         output_folder=input_file_dir,
         waveform_output_folder=waveform_folder,
-        adjoint_output_folder=os.path.abspath(config.adjoint_dir))
+        adjoint_output_folder=os.path.join(os.path.abspath(
+            config.adjoint_dir), run_name))
 
     _progress("Copying model ...")
     model_folder = os.path.join(cwd, "MODELS", "MODELS")
@@ -428,6 +429,15 @@ def clean(config):
 
 @cli.command()
 @pass_config
+def cd(config):
+    """
+    Prints the root working dir to stdour use with "$ cd `agere cd`".
+    """
+    click.echo(config.root_working_dir)
+
+
+@cli.command()
+@pass_config
 def tail(config):
     """
     Tails the output of running jobs.
@@ -447,3 +457,33 @@ def tail(config):
     all_files = [_i for _i in all_files if os.path.exists(_i)]
 
     os.system("tail -f %s" % " ".join(all_files))
+
+
+@cli.command()
+@pass_config
+@click.option("-n", type=int, default=1, show_default=True,
+              help="Get results for the n-th last output. 1 means last "
+                   "output, 2 the second last, and so on.")
+def ls_output(config, n):
+    """
+    List the output of finished runs.
+    """
+    runs = []
+
+    for run in config.list_runs():
+        info = config.site.get_status(run)
+        if info["status"] != Status.finished:
+            continue
+        runs.append((run, info["time"]))
+
+    # Sort by reverse time.
+    runs = sorted(runs, key=lambda x: x[1], reverse=True)
+    if n > len(runs):
+        raise ValueError("Only %i runs available." % len(runs))
+
+    run = runs[n - 1][0]
+    click.echo("Waveforms:")
+    waveform_folder = os.path.join(config.waveform_dir, run)
+    contents = sorted(os.listdir(waveform_folder))
+    for _i in contents:
+        click.echo("\t%s" % os.path.join(waveform_folder, _i))
