@@ -71,6 +71,8 @@ class Config(object):
             os.makedirs(self.model_dir)
         if not os.path.exists(self.waveform_dir):
             os.makedirs(self.waveform_dir)
+        if not os.path.exists(self.kernel_dir):
+            os.makedirs(self.kernel_dir)
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
@@ -110,6 +112,10 @@ class Config(object):
     @property
     def waveform_dir(self):
         return os.path.join(self.root_working_dir, "__WAVEFORMS")
+
+    @property
+    def kernel_dir(self):
+        return os.path.join(self.root_working_dir, "__KERNELS")
 
     def list_models(self):
         return [_i for _i in os.listdir(self.model_dir)
@@ -382,12 +388,12 @@ def run_adjoint(config, fw_run, parallel_events,
     # Set adjoint flag to 2, meaning an adjoint reverse simulation
     input_files.setup["adjoint_flag"] = 2
 
-    # Directory where the waveforms will be stored. Must be relative for SES3D.
-    waveform_folder = os.path.join(config.waveform_dir, bw_run)
-    if not os.path.exists(waveform_folder):
-        os.makedirs(waveform_folder)
-    waveform_folder = os.path.relpath(waveform_folder,
-                                      os.path.join(bw_run_folder, "MAIN"))
+    # Directory where the kernels will be stored. Must be relative for SES3D.
+    kernel_folder = os.path.join(config.kernel_dir, bw_run)
+    if not os.path.exists(kernel_folder):
+        os.makedirs(kernel_folder)
+    kernel_folder = os.path.relpath(kernel_folder,
+                                    os.path.join(bw_run_folder, "MAIN"))
 
     input_file_dir = os.path.join(bw_run_folder, "INPUT")
     if os.path.exists(input_file_dir):
@@ -396,7 +402,7 @@ def run_adjoint(config, fw_run, parallel_events,
 
     input_files.write(
         output_folder=input_file_dir,
-        waveform_output_folder=waveform_folder,
+        waveform_output_folder=kernel_folder,
         adjoint_output_folder=os.path.join(os.path.abspath(
             config.adjoint_dir), fw_run))
 
@@ -600,9 +606,6 @@ def ls_output(config, n):
         click.echo("\t%s" % os.path.join(waveform_folder, _i))
 
 
-# For now there is not option to compress at higher efficiency as this would
-# put too much strain on the HPC centers as SES3D Ctrl is usually run on the
-# login nodes...
 @cli.command()
 @click.option('--compress', is_flag=True,
               help="Optionally compress (gzip level 1) the data. Slower but "
@@ -669,3 +672,19 @@ def tar_waveforms(config, compress):
                     tf.add(filename,
                            arcname=os.path.relpath(filename, relpath))
         _progress("Created archive %s" % run[2])
+
+
+@cli.command()
+@click.option('--iteration-name', type=str, required=True,
+              help="The iteration name")
+@click.option('--lasif-project', type=click.Path(exists=True, dir_okay=True),
+              required=True, help="The LASIF project root")
+@click.argument("archives", type=click.Path(exists=True, file_okay=True),
+                nargs=-1)
+@pass_config
+def unpack_waveforms(config, iteration_name, lasif_project, archives):
+    """
+    Unpacks the waveforms in the archives to the corresponding LASIF project.
+    """
+    pass
+
