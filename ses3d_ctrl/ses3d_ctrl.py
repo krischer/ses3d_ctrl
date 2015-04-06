@@ -200,8 +200,8 @@ def _progress(msg, warn=False):
               help="Wall time per event in hours. Only needed for some sites.")
 @click.argument("input_files_folders", type=click.Path(), nargs=-1)
 @pass_config
-def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit,
-        wall_time_per_event, parallel_events):
+def run_forward(config, model, input_files_folders, lpd, fw_lpd, pml_count,
+                pml_limit, wall_time_per_event, parallel_events):
     """
     Run a simulation for the chosen input files. If multiple input file folders
     are given, they will be merged.
@@ -235,8 +235,8 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit,
         float(len(input_files.events)) / float(parallel_events)
     cpu_count = s["px"] * s["py"] * s["pz"] * parallel_events
 
-    # Get a new working directory.
-    cwd = config.site.get_new_working_directory()
+    # Get a new working directory for a forward run.
+    cwd = config.site.get_new_working_directory(job_type="fw")
     run_name = os.path.basename(cwd)
     _progress("Initializing run '%s' ..." % run_name)
 
@@ -297,6 +297,113 @@ def run(config, model, input_files_folders, lpd, fw_lpd, pml_count, pml_limit,
                           wall_time=wall_time_in_hours,
                           email=config.email)
 
+
+@cli.command()
+@click.option("--fw_run", type=str, required=True,
+              help="The name of the associated forward run")
+@click.option("--parallel-events", type=int, default=1, show_default=True,
+              help="The number of events to run in parallel.")
+@click.option("--wall-time-per-event", type=float, default=0.5,
+              help="Wall time per event in hours. Only needed for some sites.")
+@click.argument("adjoint_source_folders", type=click.Path(), nargs=-1)
+@pass_config
+def run_adjoint(config, fw_run, parallel_events,
+                wall_time_per_event, adjoint_source_folders):
+    """
+    Runs a reverse (adjoint) simulation for a given forward run.
+
+    Each event used in the forward simulation must have adjoint sources. The
+    event name must be part of the folder name.
+    """
+    if not fw_run.endswith("_fw"):
+        raise ValueError("Forward run name must end with '_fw'.")
+
+    status = config.site.get_status(fw_run)
+    if status["status"] != Status.finished:
+        raise ValueError("Forward run %s not yet finished." % fw_run)
+
+    # Safer than str.replace(). The validity of the run name has been
+    # asserted before.
+    bw_run = fw_run[:-3] + "_bw"
+    fw_run_folder = config.site.get_working_dir_name(fw_run)
+    bw_run_folder = config.site.get_working_dir_name(bw_run)
+
+    if os.path.exists(bw_run_folder):
+        raise ValueError("Backwards run already exists: %s" % bw_run_folder)
+
+    _progress("Matching adjoint sources with events from forward run ...")
+    # Time to parse the input files and get a list of events.
+    input_files = SES3DInputFiles(os.path.join(fw_run_folder, "INPUT"))
+
+    if len(input_files.events) % parallel_events != 0:
+        raise ValueError("The total number of events must be a multiple of "
+                         "the number of parallel events.")
+
+    # Now we now the total number of events, let's calculate the total wall
+    # time and the number of CPUs required.
+    s = input_files.setup
+    wall_time_in_hours = wall_time_per_event * \
+        float(len(input_files.events)) / float(parallel_events)
+    cpu_count = s["px"] * s["py"] * s["pz"] * parallel_events
+
+    events_fw_run = list(input_files.events.keys())
+
+    for folder in adjoint_source_folders:
+        if not os.path.exists(os.path.join(folder, "ad_srcfile")):
+            raise ValueError("Folder '%s' has not 'ad_srcfile'." % folder)
+
+    # Now find the adjoint source folder for each event.
+    events_bw_run = {}
+    for event in events_fw_run:
+        adj_srcs = [_i for _i in adjoint_source_folders if event in
+                    os.path.basename(_i)]
+        if not adj_srcs:
+            raise ValueError("Could not find adjoint sources for event %s."
+                             % event)
+        if len(adj_srcs) > 1:
+            raise ValueError(
+                "More than one potential folder with adjoint sources for "
+                "events %s found: \n\t%s" % (event, "\n\t".join(adj_srcs)))
+        events_bw_run[event] = adj_srcs[0]
+
+    _progress("Copying forward run folder ...")
+    shutil.copytree(fw_run_folder, bw_run_folder)
+
+    _progress("Copying adjoint sources ...")
+    adjoint_folder = os.path.join(bw_run_folder, "ADJOINT")
+    if os.path.exists(adjoint_folder):
+        shutil.rmtree(adjoint_folder)
+    os.makedirs(adjoint_folder)
+
+    for event_name, folder in events_bw_run.items():
+        shutil.copytree(folder, os.path.join(adjoint_folder, event_name))
+
+    _progress("Creating input files ...")
+    # Set adjoint flag to 2, meaning an adjoint reverse simulation
+    input_files.setup["adjoint_flag"] = 2
+
+    # Directory where the waveforms will be stored. Must be relative for SES3D.
+    waveform_folder = os.path.join(config.waveform_dir, bw_run)
+    if not os.path.exists(waveform_folder):
+        os.makedirs(waveform_folder)
+    waveform_folder = os.path.relpath(waveform_folder,
+                                      os.path.join(bw_run_folder, "MAIN"))
+
+    input_file_dir = os.path.join(bw_run_folder, "INPUT")
+    if os.path.exists(input_file_dir):
+        shutil.rmtree(input_file_dir)
+    os.makedirs(input_file_dir)
+
+    input_files.write(
+        output_folder=input_file_dir,
+        waveform_output_folder=waveform_folder,
+        adjoint_output_folder=os.path.join(os.path.abspath(
+            config.adjoint_dir), fw_run))
+
+    _progress("Launching SES3D on %i cores ..." % cpu_count)
+    config.site.run_ses3d(job_name=bw_run, cpu_count=cpu_count,
+                          wall_time=wall_time_in_hours,
+                          email=config.email)
 
 @cli.command()
 @click.argument("model-name", type=str)
@@ -493,6 +600,9 @@ def ls_output(config, n):
         click.echo("\t%s" % os.path.join(waveform_folder, _i))
 
 
+# For now there is not option to compress at higher efficiency as this would
+# put too much strain on the HPC centers as SES3D Ctrl is usually run on the
+# login nodes...
 @cli.command()
 @click.option('--compress', is_flag=True,
               help="Optionally compress (gzip level 1) the data. Slower but "

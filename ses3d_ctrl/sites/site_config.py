@@ -227,16 +227,28 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         else:
             click.echo("Job '%s' could not be cancelled." % job_name)
 
-    def get_new_working_directory(self):
+    def get_working_dir_name(self, run_name):
+        """
+        Helper function returning the run folder for a certain run.
+
+        :param run_name: The name of the run.
+        """
+        return os.path.join(self.working_dir, run_name)
+
+    def get_new_working_directory(self, job_type):
         """
         Gets a new working directory for a job. The name of the directory is
         also the name of the job.
         """
+        job_type = job_type.lower().strip()
+        if len(job_type) != 2:
+            raise ValueError("Job type must have exactly two letters!")
         time_str = datetime.datetime.now().strftime("%y%m%d%H%M")
         directory = "%s_%s" % (time_str, str(uuid.uuid4()).split("-")[0])
-        # Limit to 20 chars.
-        directory = directory[:20]
-        directory = os.path.join(self.working_dir, directory)
+        # Limit to 18 chars.
+        directory = directory[:18]
+        directory += "_%s" % job_type
+        directory = self.get_working_dir_name(directory)
         if not os.path.exists(directory):
             os.makedirs(directory)
         return directory
