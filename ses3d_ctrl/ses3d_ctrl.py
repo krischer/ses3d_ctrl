@@ -3,6 +3,7 @@
 from __future__ import absolute_import
 
 import click
+import glob
 import hashlib
 import io
 import json
@@ -411,6 +412,7 @@ def run_adjoint(config, fw_run, parallel_events,
                           wall_time=wall_time_in_hours,
                           email=config.email)
 
+
 @cli.command()
 @click.argument("model-name", type=str)
 @pass_config
@@ -665,7 +667,6 @@ def tar_waveforms(config, compress):
         else:
             flags = {"mode": "w"}
 
-
         with click.progressbar(all_files) as files:
             with tarfile.open(run[2], **flags) as tf:
                 for filename in files:
@@ -686,5 +687,78 @@ def unpack_waveforms(config, iteration_name, lasif_project, archives):
     """
     Unpacks the waveforms in the archives to the corresponding LASIF project.
     """
-    pass
+    config_file = os.path.join(lasif_project, "config.xml")
+    if not os.path.exists(config_file):
+        raise ValueError("%s does not contain a valid LASIF project." %
+                         lasif_project)
 
+    event_folder = os.path.join(lasif_project, "EVENTS")
+    if not os.path.exists(event_folder):
+        raise ValueError("%s does not contain an EVENTS folder." %
+                         lasif_project)
+    synthetics_folder = os.path.join(lasif_project, "SYNTHETICS")
+    if not os.path.exists(synthetics_folder):
+        raise ValueError("%s does not contain a SYNTHETICS folder." %
+                         lasif_project)
+
+    # Get the events in the LASIF project.
+    events = [os.path.splitext(os.path.basename(_i))[0] for _i in glob.glob(
+              os.path.join(event_folder, "*.xml"))]
+
+    # Get events that already have data for the iteration in question.
+    events_with_data = []
+    long_iteration_name = "ITERATION_%s" % iteration_name
+    for event in events:
+        folder = os.path.join(synthetics_folder, event, long_iteration_name)
+        if not os.path.exists(folder):
+            continue
+        contents = os.listdir(folder)
+        if contents:
+            events_with_data.append(event)
+
+    # Loop over all
+    existing_folders = []
+    total_count = 0
+    for _i, archive in enumerate(archives):
+        count = 0
+        _progress("Unpacking archive %i of %i [%s]" % (_i + 1, len(archives),
+                                                       archive))
+        with tarfile.open(archive, "r") as tf:
+            for info in tf:
+                if not info.isfile():
+                    continue
+                split_name = os.path.split(info.name)
+                if len(split_name) != 2:
+                    raise ValueError("%s in archive %s is not valid" % (
+                        info.name, archive))
+                event_name = split_name[0]
+                if event_name not in events:
+                    raise ValueError(
+                        "Event %s part of archive %s is not part of the LASIF "
+                        "project." % (event_name, archive))
+                if event_name in events_with_data:
+                    raise ValueError(
+                        "Event %s, part of archive %s already has data in "
+                        "LASIF for iteration %s" % (event_name, archive,
+                                                    iteration_name))
+
+                folder_name = os.path.join(synthetics_folder, event_name,
+                                           long_iteration_name)
+                # Cache the availability query.
+                if folder_name not in existing_folders:
+                    if not os.path.exists(folder_name):
+                        os.makedirs(folder_name)
+                    existing_folders.append(folder_name)
+
+                filename = os.path.join(folder_name, os.path.basename(
+                                        info.name))
+                with open(filename, "wb") as fh:
+                    fh.write(tf.extractfile(info).read())
+
+                count += 1
+                total_count += 1
+
+                if not count % 1000:
+                    _progress("\tUnpacked %i files ..." % count)
+
+    _progress("Extracted %i files." % total_count)
