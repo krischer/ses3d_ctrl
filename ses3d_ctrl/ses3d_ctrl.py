@@ -762,3 +762,18 @@ def unpack_waveforms(config, iteration_name, lasif_project, archives):
                     _progress("\tUnpacked %i files ..." % count)
 
     _progress("Extracted %i files." % total_count)
+
+
+@cli.command()
+@click.option('--iteration-name', type=str, required=True,
+              help="The iteration name")
+@click.option('--lasif-project', type=click.Path(exists=True, dir_okay=True),
+              required=True, help="The LASIF project root")
+@click.argument("archives", type=click.Path(exists=True, file_okay=True),
+                nargs=-1)
+@pass_config
+def project_kernel(config, iteration_name, lasif_project, archives):
+    """
+    Unpacks the waveforms in the archives to the corresponding LASIF project.
+    """
+    config_file = os.path.join(lasif_project, "config.xml")
