@@ -14,6 +14,7 @@ import sys
 import tarfile
 
 from . import utils
+from .gradients import sum_kernels
 from .sites import available_sites
 from .sites.site_config import Status
 from .ses3d_input_files import SES3DInputFiles
@@ -816,8 +817,9 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
         y_min=dims["y_min"] - buf * dims["y_range"],
         y_max=dims["y_max"] + buf * dims["y_range"],
         y_count=dims["element_count_y"] * 10,
-        z_min=dims["z_min"] - buf * dims["z_range"],
-        z_max=dims["z_max"] + buf * dims["z_range"],
+        # blockfiles are in km whereas boxfiles are in m...
+        z_min=dims["z_min"] / 1000.0 - buf * dims["z_range"] / 1000.0,
+        z_max=dims["z_max"] / 1000.0 + buf * dims["z_range"] / 1000.0,
         z_count=dims["element_count_z"] * 10,
     )
 
@@ -952,6 +954,7 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
 
     p.wait()
 
+    kernel_output_dirs = []
 
     for kernel in kernels:
         _progress("Projecting kernel %s ..." % kernel)
@@ -1000,155 +1003,27 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
         p.wait()
 
         final_dir = os.path.join(output_folder, os.path.basename(kernel))
+        kernel_output_dirs.append(final_dir)
         os.makedirs(final_dir)
         for filename in glob.glob(os.path.join(output_folder, "gradient_*")):
             shutil.move(filename, os.path.join(
                 final_dir, os.path.basename(filename)))
+        # The block files are also needed for the later kernel reading.
+        shutil.copy(os.path.join(blockfile_folder, "block_x"),
+                    os.path.join(final_dir, "block_x"))
+        shutil.copy(os.path.join(blockfile_folder, "block_y"),
+                    os.path.join(final_dir, "block_y"))
+        shutil.copy(os.path.join(blockfile_folder, "block_z"),
+                    os.path.join(final_dir, "block_z"))
 
-@cli.command()
-@click.argument("input_folder", type=click.Path(exists=True, dir_okay=True))
-@click.argument("output_folder", type=click.Path())
-@pass_config
-def project_kernel(config, input_folder, output_folder):
-    """
-    Projects the kernel in the input folder to the output folder.
-
-    It will be reprojected to approximately 10 points per element with some
-    buffer around the domain.
-    """
-    boxfile = os.path.join(input_folder, "boxfile")
-    if not os.path.exists(boxfile):
-        raise ValueError("Input folder has no boxfile. Copy it from some "
-                         "model.")
-
-    dims = utils.read_boxfile(boxfile)
-
-    if os.path.exists(output_folder):
-        raise ValueError("Folder %s already exists" % output_folder)
-
-    # Write the blockfiles.
-    _progress("Creating block files ...")
-    blockfile_folder = os.path.join(output_folder, "MODELS", "MODELS_3D")
-    os.makedirs(blockfile_folder)
-
-    buf = 0.05
-    utils.write_ses3d_blockfiles(
-        output_folder=blockfile_folder,
-        x_min=dims["x_min"] - buf * dims["x_range"],
-        x_max=dims["x_max"] + buf * dims["x_range"],
-        x_count=dims["element_count_x"] * 10,
-        y_min=dims["y_min"] - buf * dims["y_range"],
-        y_max=dims["y_max"] + buf * dims["y_range"],
-        y_count=dims["element_count_y"] * 10,
-        z_min=dims["z_min"] - buf * dims["z_range"],
-        z_max=dims["z_max"] + buf * dims["z_range"],
-        z_count=dims["element_count_z"] * 10,
-    )
-
-    # Copy the boxfiles.
-    _progress("Copying boxfile ...")
-    boxfile_folder = os.path.join(output_folder, "MODELS", "MODELS")
-    os.makedirs(boxfile_folder)
-    shutil.copy(boxfile, os.path.join(boxfile_folder, "boxfile"))
-
-    _progress("Extracting and compiling the Fortran code ...")
-    _check_ses3d_md5()
-
-    src_and_binary_folder = os.path.join(output_folder, "SRC")
-    os.makedirs(src_and_binary_folder)
-
-    filenames = ["ses3d_modules.f90", "project_kernel.f90"]
-
-    with tarfile.open(SES3D_PATH, "r:gz") as tf:
-        for member in tf.getmembers():
-            name = member.name
-            if "TOOLS/SOURCE" not in name:
-                continue
-            fname = os.path.basename(name)
-            if fname not in filenames:
-                continue
-            with open(os.path.join(src_and_binary_folder, fname), "wb") as fh:
-                fh.write(tf.extractfile(member).read())
-
-    # Now read the project_kernel.f90 file and patch the character limit.
-    # XXX: Fix this if SES3D updates eventually.
-    fname = os.path.join(src_and_binary_folder, "project_kernel.f90")
-    with open(fname, "r") as fh:
-        src_code = fh.read()
-    with open(fname, "w") as fh:
-        src_code = src_code.replace(
-            "character(len=140) :: fn_grad, fn_output",
-            "character(len=512) :: fn_grad, fn_output")
-        src_code = src_code.replace(
-            "character(len=60) :: junk, fn",
-            "character(len=512) :: junk, fn")
-        fh.write(src_code)
-
-    # Also patch the modules file.
-    nx_max = dims["element_count_x"] / dims["processors_in_x"]
-    ny_max = dims["element_count_y"] / dims["processors_in_y"]
-    nz_max = dims["element_count_z"] / dims["processors_in_z"]
-
-    fname = os.path.join(src_and_binary_folder, "ses3d_modules.f90")
-    with open(fname, "r") as fh:
-        src_code = fh.read()
-    with open(fname, "w") as fh:
-        src_code = src_code.replace(
-            "integer, parameter :: nx_max=22",
-            "integer, parameter :: nx_max=%i" % nx_max)
-        src_code = src_code.replace(
-            "integer, parameter :: ny_max=27",
-            "integer, parameter :: ny_max=%i" % ny_max)
-
-        src_code = src_code.replace(
-            "integer, parameter :: nz_max=7",
-            "integer, parameter :: nz_max=%i" % nz_max)
-
-        fh.write(src_code)
-
-    source_code_files = filenames
-    executable = "project_kernel"
-
-    config.site.compile_fortran_files(
-        source_code_files=source_code_files,
-        executable=executable, cwd=src_and_binary_folder)
-
-    # Launch it. This will always launch it on the login node/local CPU but
-    # that should be ok.
-    full_name = os.path.join(os.path.abspath(src_and_binary_folder),
-                             os.path.basename(executable))
-    p = subprocess.Popen(full_name,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT,
-                         stdin=subprocess.PIPE,
-                         cwd=os.path.abspath(src_and_binary_folder),
-                         bufsize=0)
-    out = p.stdout.readline()
-    while out:
-        line = out
-        line = line.strip()
-
-        print(line)
-
-        if line.startswith("project visco-elastic kernels"):
-            answer = "0\n"
-            p.stdin.write(answer)
-            print(answer.strip())
-
-        elif line.startswith("directory for sensitivity densities"):
-            answer = "'%s%s'\n" % (
-                os.path.relpath(input_folder, src_and_binary_folder),
-                os.path.sep)
-            p.stdin.write(answer)
-            print(answer.strip())
-
-        elif line.startswith("directory for output:"):
-            answer = "'%s%s'\n" % (
-                os.path.relpath(output_folder, src_and_binary_folder),
-                os.path.sep)
-            p.stdin.write(answer)
-            print(answer.strip())
-
-        out = p.stdout.readline()
-
-    p.wait()
+    _progress("Summing up kernels ...")
+    summed_kernel_dir = os.path.join(output_folder, "SUMMED_GRADIENT")
+    sum_kernels(kernel_dirs=kernel_output_dirs,
+                output_dir=summed_kernel_dir)
+    # Also copy the boxfiles to the summed kernels!
+    shutil.copy(os.path.join(blockfile_folder, "block_x"),
+                os.path.join(summed_kernel_dir, "block_x"))
+    shutil.copy(os.path.join(blockfile_folder, "block_y"),
+                os.path.join(summed_kernel_dir, "block_y"))
+    shutil.copy(os.path.join(blockfile_folder, "block_z"),
+                os.path.join(summed_kernel_dir, "block_z"))

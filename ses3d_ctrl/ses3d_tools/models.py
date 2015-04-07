@@ -3,6 +3,8 @@ Modiefied copy from the SES3D tools.
 """
 from __future__ import absolute_import
 
+import os
+
 import numpy as np
 import matplotlib.pylab as plt
 from mpl_toolkits.basemap import Basemap
@@ -12,7 +14,7 @@ from .import rotation as rot
 from . import Q_models as q
 
 
-class ses3d_submodel(object):
+class SES3DSubModel(object):
     """
     class defining an ses3d submodel
     """
@@ -31,13 +33,13 @@ class ses3d_submodel(object):
         self.v = np.zeros((1, 1, 1))
 
 
-class ses3d_model(object):
+class SES3DModel(object):
     """
     class for reading, writing, plotting and manipulating and ses3d model
     """
     def __init__(self):
         """
-        initiate the ses3d_model class
+        initiate the SES3DModel class
 
         initiate list of submodels and read rotation_parameters.txt
         """
@@ -53,13 +55,16 @@ class ses3d_model(object):
         self.m = []
 
         # read rotation parameters
-        fid = open('rotation_parameters.txt', 'r')
-        fid.readline()
-        self.phi = float(fid.readline().strip())
-        fid.readline()
-        line = fid.readline().strip().split(' ')
-        self.n = np.array([float(line[0]), float(line[1]), float(line[2])])
-        fid.close()
+        # Currently disabled as not needed for ses3d_ctrl.
+        # fid = open('rotation_parameters.txt', 'r')
+        # fid.readline()
+        # self.phi = float(fid.readline().strip())
+        # fid.readline()
+        # line = fid.readline().strip().split(' ')
+        # self.n = np.array([float(line[0]), float(line[1]), float(line[2])])
+        # fid.close()
+        self.phi = 0
+        self.n = np.ones(3)
 
     #########################################################################
     # copy models
@@ -69,7 +74,7 @@ class ses3d_model(object):
         """ Copy a model
         """
 
-        res = ses3d_model()
+        res = SES3DModel()
 
         res.nsubvol = self.nsubvol
 
@@ -89,7 +94,7 @@ class ses3d_model(object):
 
         for k in np.arange(self.nsubvol):
 
-            subvol = ses3d_submodel()
+            subvol = SES3DSubModel()
 
             subvol.lat = self.m[k].lat
             subvol.lon = self.m[k].lon
@@ -108,7 +113,7 @@ class ses3d_model(object):
         """ override left-multiplication of an ses3d model by a scalar factor
         """
 
-        res = ses3d_model()
+        res = SES3DModel()
 
         res.nsubvol = self.nsubvol
 
@@ -128,7 +133,7 @@ class ses3d_model(object):
 
         for k in np.arange(self.nsubvol):
 
-            subvol = ses3d_submodel()
+            subvol = SES3DSubModel()
 
             subvol.lat = self.m[k].lat
             subvol.lon = self.m[k].lon
@@ -147,7 +152,7 @@ class ses3d_model(object):
         """
         override addition of two ses3d models
         """
-        res = ses3d_model()
+        res = SES3DModel()
 
         res.nsubvol = self.nsubvol
         res.lat_min = self.lat_min
@@ -164,7 +169,7 @@ class ses3d_model(object):
 
         for k in np.arange(self.nsubvol):
 
-            subvol = ses3d_submodel()
+            subvol = SES3DSubModel()
 
             subvol.lat = self.m[k].lat
             subvol.lon = self.m[k].lon
@@ -184,18 +189,16 @@ class ses3d_model(object):
 
         read(self,directory,filename,verbose=False):
         """
-
         # read block files
-
-        fid_x = open(directory + 'block_x', 'r')
-        fid_y = open(directory + 'block_y', 'r')
-        fid_z = open(directory + 'block_z', 'r')
+        fid_x = open(os.path.join(directory, 'block_x'), 'r')
+        fid_y = open(os.path.join(directory, 'block_y'), 'r')
+        fid_z = open(os.path.join(directory, 'block_z'), 'r')
 
         if verbose is True:
-            print 'read block files:'
-            print '\t ' + directory + 'block_x'
-            print '\t ' + directory + 'block_y'
-            print '\t ' + directory + 'block_z'
+            print "read block files:"
+            print "\t%s" % os.path.join(directory, 'block_x')
+            print "\t%s" % os.path.join(directory, 'block_y')
+            print "\t%s" % os.path.join(directory, 'block_z')
 
         dx = np.array(fid_x.read().strip().split('\n'), dtype=float)
         dy = np.array(fid_y.read().strip().split('\n'), dtype=float)
@@ -222,7 +225,7 @@ class ses3d_model(object):
             idz[k] = int(dz[idz[k - 1]]) + idz[k - 1] + 1
 
         for k in np.arange(self.nsubvol, dtype=int):
-            subvol = ses3d_submodel()
+            subvol = SES3DSubModel()
             subvol.lat = 90.0 - dx[(idx[k] + 1):(idx[k] + 1 + dx[idx[k]])]
             subvol.lon = dy[(idy[k] + 1):(idy[k] + 1 + dy[idy[k]])]
             subvol.r = dz[(idz[k] + 1):(idz[k] + 1 + dz[idz[k]])]
@@ -261,10 +264,10 @@ class ses3d_model(object):
 
         # read model volume
 
-        fid_m = open(directory + filename, 'r')
+        fid_m = open(os.path.join(directory, filename), 'r')
 
         if verbose is True:
-            print 'read model file: ' + directory + filename
+            print 'read model file: %s' % os.path.join(directory, filename)
 
         v = np.array(fid_m.read().strip().split('\n'), dtype=float)
 
@@ -320,10 +323,10 @@ class ses3d_model(object):
 
         write(self,directory,filename,verbose=False):
         """
-        fid_m = open(directory + filename, 'w')
+        fid_m = open(os.path.join(directory, filename), 'w')
 
         if verbose is True:
-            print 'write to file ' + directory + filename
+            print 'write to file %s' % os.path.join(directory, filename)
 
         fid_m.write(str(self.nsubvol) + '\n')
 
@@ -690,10 +693,10 @@ class ses3d_model(object):
 
         # open file and write header
 
-        fid = open(directory + filename, 'w')
+        fid = open(os.path.join(directory, filename), 'w')
 
         if verbose is True:
-            print 'write to file ' + directory + filename
+            print 'write to file %s' % os.path.join(directory, filename)
 
         fid.write('# vtk DataFile Version 3.0\n')
         fid.write('vtk output\n')
@@ -893,7 +896,7 @@ class ses3d_model(object):
 
             # collect subvolumes within target depth
 
-            if (max(r) >= radius) & (min(r) < radius):
+            if (max(r) >= radius) and (min(r) < radius):
 
                 N_list.append(k)
 
