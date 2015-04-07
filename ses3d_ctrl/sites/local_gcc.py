@@ -18,6 +18,15 @@ class LocalGCC(SiteConfig):
     def mpi_compiler_flags(self):
         return ["-std=c99"]
 
+    @property
+    def fortran_compiler(self):
+        return "gfortran"
+
+    @property
+    def fortran_compiler_flags(self):
+        # gfortran cuts lines after 132 chars by default...
+        return ["-ffree-line-length-none"]
+
     def _get_status(self, job_name):
         if self._process_is_running(job_name):
             if self._stdout_inidicates_job_finished(job_name):

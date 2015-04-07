@@ -77,6 +77,20 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         """
         pass
 
+    @abc.abstractproperty
+    def fortran_compiler(self):
+        """
+        Name of the Fortran compiler.
+        """
+        pass
+
+    @abc.abstractproperty
+    def fortran_compiler_flags(self):
+        """
+        Flags for the Fortran compiler.
+        """
+        pass
+
     @abc.abstractmethod
     def _get_status(self, job_name):
         """
@@ -295,4 +309,19 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         args.append("-o")
         args.append(SES3D_EXECUTABLE)
         args.extend(SES3D_SOURCES)
+        subprocess.check_call(args, cwd=cwd)
+
+    def compile_fortran_files(self, source_code_files, executable, cwd):
+        """
+        Compiles Fortran files to an executable.
+
+        :param source_code_files: The input filenames.
+        :param executable: The output filename of the executable.
+        :param cwd: The working directory.
+        """
+        args = [self.fortran_compiler]
+        args.extend(self.fortran_compiler_flags)
+        args.extend(source_code_files)
+        args.append("-o")
+        args.append(executable)
         subprocess.check_call(args, cwd=cwd)

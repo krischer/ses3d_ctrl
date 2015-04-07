@@ -9,9 +9,11 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tarfile
 
+from . import utils
 from .sites import available_sites
 from .sites.site_config import Status
 from .ses3d_input_files import SES3DInputFiles
@@ -54,6 +56,20 @@ def _write_default_config_file():
                   sort_keys=True,
                   indent=4,
                   separators=(",", ": "))
+
+
+def _check_ses3d_md5():
+    """
+    Checks the hash of the SES3D archive.
+    :return:
+    """
+    # Use checksum to assert the file is correct.
+    with io.open(SES3D_PATH, "rb") as fh:
+        md5 = hashlib.md5(fh.read()).hexdigest()
+
+    if md5 != SES3D_MD5_CHECKSUM:
+        raise ValueError("md5 of the SES3D archive is not %s" %
+                         SES3D_MD5_CHECKSUM)
 
 
 class Config(object):
@@ -249,13 +265,8 @@ def run_forward(config, model, input_files_folders, lpd, fw_lpd, pml_count,
 
     # Untar SES3D to that working directory.
     _progress("Extracting SES3D ...")
-    # Use checksum to assert the file is correct.
-    with io.open(SES3D_PATH, "rb") as fh:
-        md5 = hashlib.md5(fh.read()).hexdigest()
 
-    if md5 != SES3D_MD5_CHECKSUM:
-        raise ValueError("md5 of the SES3D archive is not %s" %
-                         SES3D_MD5_CHECKSUM)
+    _check_ses3d_md5()
 
     with tarfile.open(SES3D_PATH, "r:gz") as fh:
         for member in fh.getmembers():
@@ -765,15 +776,146 @@ def unpack_waveforms(config, iteration_name, lasif_project, archives):
 
 
 @cli.command()
-@click.option('--iteration-name', type=str, required=True,
-              help="The iteration name")
-@click.option('--lasif-project', type=click.Path(exists=True, dir_okay=True),
-              required=True, help="The LASIF project root")
-@click.argument("archives", type=click.Path(exists=True, file_okay=True),
-                nargs=-1)
+@click.argument("input_folder", type=click.Path(exists=True, dir_okay=True))
+@click.argument("output_folder", type=click.Path())
 @pass_config
-def project_kernel(config, iteration_name, lasif_project, archives):
+def project_kernel(config, input_folder, output_folder):
     """
-    Unpacks the waveforms in the archives to the corresponding LASIF project.
+    Projects the kernel in the input folder to the output folder.
+
+    It will be reprojected to approximately 10 points per element with some
+    buffer around the domain.
     """
-    config_file = os.path.join(lasif_project, "config.xml")
+    boxfile = os.path.join(input_folder, "boxfile")
+    if not os.path.exists(boxfile):
+        raise ValueError("Input folder has no boxfile. Copy it from some "
+                         "model.")
+
+    dims = utils.read_boxfile(boxfile)
+
+    if os.path.exists(output_folder):
+        raise ValueError("Folder %s already exists" % output_folder)
+
+    # Write the blockfiles.
+    _progress("Creating block files ...")
+    blockfile_folder = os.path.join(output_folder, "MODELS", "MODELS_3D")
+    os.makedirs(blockfile_folder)
+
+    buf = 0.05
+    utils.write_ses3d_blockfiles(
+        output_folder=blockfile_folder,
+        x_min=dims["x_min"] - buf * dims["x_range"],
+        x_max=dims["x_max"] + buf * dims["x_range"],
+        x_count=dims["element_count_x"] * 10,
+        y_min=dims["y_min"] - buf * dims["y_range"],
+        y_max=dims["y_max"] + buf * dims["y_range"],
+        y_count=dims["element_count_y"] * 10,
+        z_min=dims["z_min"] - buf * dims["z_range"],
+        z_max=dims["z_max"] + buf * dims["z_range"],
+        z_count=dims["element_count_z"] * 10,
+    )
+
+    # Copy the boxfiles.
+    _progress("Copying boxfile ...")
+    boxfile_folder = os.path.join(output_folder, "MODELS", "MODELS")
+    os.makedirs(boxfile_folder)
+    shutil.copy(boxfile, os.path.join(boxfile_folder, "boxfile"))
+
+    _progress("Extracting and compiling the Fortran code ...")
+    _check_ses3d_md5()
+
+    src_and_binary_folder = os.path.join(output_folder, "SRC")
+    os.makedirs(src_and_binary_folder)
+
+    filenames = ["ses3d_modules.f90", "project_kernel.f90"]
+
+    with tarfile.open(SES3D_PATH, "r:gz") as tf:
+        for member in tf.getmembers():
+            name = member.name
+            if "TOOLS/SOURCE" not in name:
+                continue
+            fname = os.path.basename(name)
+            if fname not in filenames:
+                continue
+            with open(os.path.join(src_and_binary_folder, fname), "wb") as fh:
+                fh.write(tf.extractfile(member).read())
+
+    # Now read the project_kernel.f90 file and patch the character limit.
+    # XXX: Fix this if SES3D updates eventually.
+    fname = os.path.join(src_and_binary_folder, "project_kernel.f90")
+    with open(fname, "r") as fh:
+        src_code = fh.read()
+    with open(fname, "w") as fh:
+        src_code = src_code.replace(
+            "character(len=140) :: fn_grad, fn_output",
+            "character(len=512) :: fn_grad, fn_output")
+        src_code = src_code.replace(
+            "character(len=60) :: junk, fn",
+            "character(len=512) :: junk, fn")
+        fh.write(src_code)
+
+    # Also patch the modules file.
+    nx_max = dims["element_count_x"] / dims["processors_in_x"]
+    ny_max = dims["element_count_y"] / dims["processors_in_y"]
+    nz_max = dims["element_count_z"] / dims["processors_in_z"]
+
+    fname = os.path.join(src_and_binary_folder, "ses3d_modules.f90")
+    with open(fname, "r") as fh:
+        src_code = fh.read()
+    with open(fname, "w") as fh:
+        src_code = src_code.replace(
+            "integer, parameter :: nx_max=22",
+            "integer, parameter :: nx_max=%i" % nx_max)
+        src_code = src_code.replace(
+            "integer, parameter :: ny_max=27",
+            "integer, parameter :: ny_max=%i" % ny_max)
+
+        src_code = src_code.replace(
+            "integer, parameter :: nz_max=7",
+            "integer, parameter :: nz_max=%i" % nz_max)
+
+        fh.write(src_code)
+
+    source_code_files = filenames
+    executable = "project_kernel"
+
+    config.site.compile_fortran_files(
+        source_code_files=source_code_files,
+        executable=executable, cwd=src_and_binary_folder)
+
+    # Launch it. This will always launch it on the login node/local CPU but
+    # that should be ok.
+    full_name = os.path.join(os.path.abspath(src_and_binary_folder),
+                             os.path.basename(executable))
+    p = subprocess.Popen(full_name,
+                 stdout=subprocess.PIPE,
+                 stderr=subprocess.STDOUT,
+                 stdin=subprocess.PIPE,
+                 cwd=os.path.abspath(src_and_binary_folder),
+                 bufsize=0)
+    out = p.stdout.readline()
+    while out:
+      line = out
+      line = line.strip()
+
+      print line
+
+      if line.startswith("project visco-elastic kernels"):
+          p.stdin.write("0\n")
+
+      elif line.startswith("directory for sensitivity densities"):
+          p.stdin.write("'%s%s'\n" % (
+              os.path.relpath(input_folder, src_and_binary_folder),
+              os.path.sep))
+
+      elif line.startswith("directory for output:"):
+          p.stdin.write("'%s%s'\n" % (
+              os.path.relpath(output_folder, src_and_binary_folder),
+              os.path.sep))
+
+      out = p.stdout.readline()
+
+    p.wait()
+
+
+
