@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 
 import click
 import glob
@@ -888,34 +888,37 @@ def project_kernel(config, input_folder, output_folder):
     full_name = os.path.join(os.path.abspath(src_and_binary_folder),
                              os.path.basename(executable))
     p = subprocess.Popen(full_name,
-                 stdout=subprocess.PIPE,
-                 stderr=subprocess.STDOUT,
-                 stdin=subprocess.PIPE,
-                 cwd=os.path.abspath(src_and_binary_folder),
-                 bufsize=0)
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         stdin=subprocess.PIPE,
+                         cwd=os.path.abspath(src_and_binary_folder),
+                         bufsize=0)
     out = p.stdout.readline()
     while out:
-      line = out
-      line = line.strip()
+        line = out
+        line = line.strip()
 
-      print line
+        print(line)
 
-      if line.startswith("project visco-elastic kernels"):
-          p.stdin.write("0\n")
+        if line.startswith("project visco-elastic kernels"):
+            answer = "0\n"
+            p.stdin.write(answer)
+            print(answer.strip())
 
-      elif line.startswith("directory for sensitivity densities"):
-          p.stdin.write("'%s%s'\n" % (
-              os.path.relpath(input_folder, src_and_binary_folder),
-              os.path.sep))
+        elif line.startswith("directory for sensitivity densities"):
+            answer = "'%s%s'\n" % (
+                os.path.relpath(input_folder, src_and_binary_folder),
+                os.path.sep)
+            p.stdin.write(answer)
+            print(answer.strip())
 
-      elif line.startswith("directory for output:"):
-          p.stdin.write("'%s%s'\n" % (
-              os.path.relpath(output_folder, src_and_binary_folder),
-              os.path.sep))
+        elif line.startswith("directory for output:"):
+            answer = "'%s%s'\n" % (
+                os.path.relpath(output_folder, src_and_binary_folder),
+                os.path.sep)
+            p.stdin.write(answer)
+            print(answer.strip())
 
-      out = p.stdout.readline()
+        out = p.stdout.readline()
 
     p.wait()
-
-
-
