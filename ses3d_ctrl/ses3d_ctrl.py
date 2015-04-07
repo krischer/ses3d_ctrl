@@ -808,19 +808,20 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
     blockfile_folder = os.path.join(output_folder, "MODELS", "MODELS_3D")
     os.makedirs(blockfile_folder)
 
-    buf = 0.05
+    buf = 0.02
+    # Currently each element will be projected to 5 points per dimension.
     utils.write_ses3d_blockfiles(
         output_folder=blockfile_folder,
         x_min=dims["x_min"] - buf * dims["x_range"],
         x_max=dims["x_max"] + buf * dims["x_range"],
-        x_count=dims["element_count_x"] * 10,
+        x_count=dims["element_count_x"] * 5,
         y_min=dims["y_min"] - buf * dims["y_range"],
         y_max=dims["y_max"] + buf * dims["y_range"],
-        y_count=dims["element_count_y"] * 10,
+        y_count=dims["element_count_y"] * 5,
         # blockfiles are in km whereas boxfiles are in m...
         z_min=dims["z_min"] / 1000.0 - buf * dims["z_range"] / 1000.0,
         z_max=dims["z_max"] / 1000.0 + buf * dims["z_range"] / 1000.0,
-        z_count=dims["element_count_z"] * 10,
+        z_count=dims["element_count_z"] * 5,
     )
 
     # Copy the boxfiles.
@@ -912,47 +913,47 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
         source_code_files=source_code_files,
         executable=project_model_executable, cwd=src_and_binary_folder)
 
-    _progress("Projecting model ...")
-
-    # Launch it. This will always launch it on the login node/local CPU but
-    # that should be ok.
-    full_name = os.path.join(os.path.abspath(src_and_binary_folder),
-                             os.path.basename(project_model_executable))
-    p = subprocess.Popen(full_name,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT,
-                         stdin=subprocess.PIPE,
-                         cwd=os.path.abspath(src_and_binary_folder),
-                         bufsize=0)
-    out = p.stdout.readline()
-    while out:
-        line = out
-        line = line.strip()
-
-        if verbose:
-            print(line)
-
-        if line.startswith("directory for model files"):
-            answer = "'%s%s'\n" % (
-                os.path.relpath(model_path, src_and_binary_folder),
-                os.path.sep)
-            p.stdin.write(answer)
-            if verbose:
-                print(answer.strip())
-
-        elif line.startswith("directory for output:"):
-            answer = "'%s%s'\n" % (
-                os.path.relpath(os.path.join(output_folder, "MODELS",
-                                             "MODELS_3D"),
-                                src_and_binary_folder),
-                os.path.sep)
-            p.stdin.write(answer)
-            if verbose:
-                print(answer.strip())
-
-        out = p.stdout.readline()
-
-    p.wait()
+    # _progress("Projecting model ...")
+    #
+    # # Launch it. This will always launch it on the login node/local CPU but
+    # # that should be ok.
+    # full_name = os.path.join(os.path.abspath(src_and_binary_folder),
+    #                          os.path.basename(project_model_executable))
+    # p = subprocess.Popen(full_name,
+    #                      stdout=subprocess.PIPE,
+    #                      stderr=subprocess.STDOUT,
+    #                      stdin=subprocess.PIPE,
+    #                      cwd=os.path.abspath(src_and_binary_folder),
+    #                      bufsize=0)
+    # out = p.stdout.readline()
+    # while out:
+    #     line = out
+    #     line = line.strip()
+    #
+    #     if verbose:
+    #         print(line)
+    #
+    #     if line.startswith("directory for model files"):
+    #         answer = "'%s%s'\n" % (
+    #             os.path.relpath(model_path, src_and_binary_folder),
+    #             os.path.sep)
+    #         p.stdin.write(answer)
+    #         if verbose:
+    #             print(answer.strip())
+    #
+    #     elif line.startswith("directory for output:"):
+    #         answer = "'%s%s'\n" % (
+    #             os.path.relpath(os.path.join(output_folder, "MODELS",
+    #                                          "MODELS_3D"),
+    #                             src_and_binary_folder),
+    #             os.path.sep)
+    #         p.stdin.write(answer)
+    #         if verbose:
+    #             print(answer.strip())
+    #
+    #     out = p.stdout.readline()
+    #
+    # p.wait()
 
     kernel_output_dirs = []
 
