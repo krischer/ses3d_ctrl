@@ -913,47 +913,47 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
         source_code_files=source_code_files,
         executable=project_model_executable, cwd=src_and_binary_folder)
 
-    # _progress("Projecting model ...")
-    #
-    # # Launch it. This will always launch it on the login node/local CPU but
-    # # that should be ok.
-    # full_name = os.path.join(os.path.abspath(src_and_binary_folder),
-    #                          os.path.basename(project_model_executable))
-    # p = subprocess.Popen(full_name,
-    #                      stdout=subprocess.PIPE,
-    #                      stderr=subprocess.STDOUT,
-    #                      stdin=subprocess.PIPE,
-    #                      cwd=os.path.abspath(src_and_binary_folder),
-    #                      bufsize=0)
-    # out = p.stdout.readline()
-    # while out:
-    #     line = out
-    #     line = line.strip()
-    #
-    #     if verbose:
-    #         print(line)
-    #
-    #     if line.startswith("directory for model files"):
-    #         answer = "'%s%s'\n" % (
-    #             os.path.relpath(model_path, src_and_binary_folder),
-    #             os.path.sep)
-    #         p.stdin.write(answer)
-    #         if verbose:
-    #             print(answer.strip())
-    #
-    #     elif line.startswith("directory for output:"):
-    #         answer = "'%s%s'\n" % (
-    #             os.path.relpath(os.path.join(output_folder, "MODELS",
-    #                                          "MODELS_3D"),
-    #                             src_and_binary_folder),
-    #             os.path.sep)
-    #         p.stdin.write(answer)
-    #         if verbose:
-    #             print(answer.strip())
-    #
-    #     out = p.stdout.readline()
-    #
-    # p.wait()
+    _progress("Projecting model ...")
+
+    # Launch it. This will always launch it on the login node/local CPU but
+    # that should be ok.
+    full_name = os.path.join(os.path.abspath(src_and_binary_folder),
+                             os.path.basename(project_model_executable))
+    p = subprocess.Popen(full_name,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         stdin=subprocess.PIPE,
+                         cwd=os.path.abspath(src_and_binary_folder),
+                         bufsize=0)
+    out = p.stdout.readline()
+    while out:
+        line = out
+        line = line.strip()
+
+        if verbose:
+            print(line)
+
+        if line.startswith("directory for model files"):
+            answer = "'%s%s'\n" % (
+                os.path.relpath(model_path, src_and_binary_folder),
+                os.path.sep)
+            p.stdin.write(answer)
+            if verbose:
+                print(answer.strip())
+
+        elif line.startswith("directory for output:"):
+            answer = "'%s%s'\n" % (
+                os.path.relpath(os.path.join(output_folder, "MODELS",
+                                             "MODELS_3D"),
+                                src_and_binary_folder),
+                os.path.sep)
+            p.stdin.write(answer)
+            if verbose:
+                print(answer.strip())
+
+        out = p.stdout.readline()
+
+    p.wait()
 
     kernel_output_dirs = []
 
