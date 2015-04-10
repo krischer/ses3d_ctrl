@@ -444,7 +444,7 @@ class SES3DModel(object):
 
                 lon, colat = np.meshgrid(
                     self.m[n].lon[ny_min:ny_max],
-                    90.0 - self.m[n].lat[nx_min:nx_max], dtype=float)
+                    90.0 - self.m[n].lat[nx_min:nx_max])
                 colat = np.pi * colat / 180.0
                 lon = np.pi * lon / 180.0
 

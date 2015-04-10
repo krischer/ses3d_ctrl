@@ -14,6 +14,7 @@ import sys
 import tarfile
 
 import click
+import numpy as np
 
 from . import utils
 from .gradients import sum_kernels
@@ -1177,3 +1178,159 @@ def project_kernel(executable, kernel_folder, output_folder,
                 os.path.join(final_dir, "block_z"))
 
     _progress("Projected kernel %s." % kernel_name)
+
+
+@cli.command()
+@click.option("--smoothing-iterations", type=int,
+              help="Number of nearest neighbour smoothing iterations.")
+@click.argument("kernel", type=click.Path(exists=True, file_okay=True,
+                                          readable=True))
+@click.argument("depth_in_km", type=float)
+def plot_kernel(kernel, depth_in_km, smoothing_iterations):
+    """
+    Plots the given kernel without rotations or anything.
+    """
+    from .ses3d_tools.models import SES3DModel
+    m = SES3DModel()
+    m.read(os.path.dirname(kernel), os.path.basename(kernel))
+    if smoothing_iterations:
+        m.smooth_horizontal(sigma=smoothing_iterations,
+                            filter_type="neighbour")
+    from IPython.core.debugger import Tracer; Tracer(colors="Linux")()
+    m.plot_slice(depth_in_km)
+
+
+@cli.command()
+@click.option("--smoothing-iterations", type=int, required=True,
+              help="Number of nearest neighbour smoothing iterations.")
+@click.argument("gradient_dir", type=click.Path(exists=True, dir_okay=True,
+                                                readable=True))
+@click.argument("model_dir", type=click.Path(exists=True, dir_okay=True,
+                                             readable=True))
+@pass_config
+def update_model_steepest_descent(config, smoothing_iterations,
+                                  gradient_dir, model_dir):
+    """
+    Updates the chosen model with any gradient.
+    """
+    from .ses3d_tools.models import SES3DModel
+
+    _progress("Reading gradients ...")
+    # Read all gradients.
+    grad_cp = SES3DModel()
+    grad_csv = SES3DModel()
+    grad_csh = SES3DModel()
+    grad_rho = SES3DModel()
+
+    grad_cp.read(gradient_dir, "gradient_cp")
+    grad_csv.read(gradient_dir, "gradient_csv")
+    grad_csh.read(gradient_dir, "gradient_csh")
+    grad_rho.read(gradient_dir, "gradient_rho")
+
+    _progress("Reading model ...")
+    # Read model.
+    cp = SES3DModel()
+    csv = SES3DModel()
+    csh = SES3DModel()
+    rho = SES3DModel()
+
+    cp.read(model_dir, "vp")
+    csv.read(model_dir, "vsv")
+    csh.read(model_dir, "vsh")
+    rho.read(model_dir, "rho")
+
+    # Smooth
+    _progress("Smoothing gradients ...")
+    grad_cp.smooth_horizontal(sigma=smoothing_iterations,
+                              filter_type="neighbour")
+    grad_csv.smooth_horizontal(sigma=smoothing_iterations,
+                               filter_type="neighbour")
+    grad_csh.smooth_horizontal(sigma=smoothing_iterations,
+                               filter_type="neighbour")
+    grad_rho.smooth_horizontal(sigma=smoothing_iterations,
+                               filter_type="neighbour")
+
+    # Relative importance of the kernels
+    sum_csv = 0.0
+    sum_csh = 0.0
+    sum_rho = 0.0
+    sum_cp = 0.0
+
+    for n in range(grad_csv.nsubvol):
+        sum_csv = sum_csv + np.sum(np.abs(grad_csv.m[n].v))
+        sum_csh = sum_csh + np.sum(np.abs(grad_csh.m[n].v))
+        sum_rho = sum_rho + np.sum(np.abs(grad_rho.m[n].v))
+        sum_cp = sum_cp + np.sum(np.abs(grad_cp.m[n].v))
+
+    max_sum = max([sum_csv, sum_csh, sum_cp, sum_rho])
+
+    scale_csv_total = sum_csv / max_sum
+    scale_csh_total = sum_csh / max_sum
+    scale_rho_total = sum_rho / max_sum
+    scale_cp_total = sum_cp / max_sum
+
+    print("Relative importance of kernels:\n"
+          "\tc_sv: %.4f\n"
+          "\tc_sh: %.4f\n"
+          "\tc_p: %.4f\n"
+          "\trho: %.4f" % (scale_csv_total, scale_csh_total,
+                           scale_rho_total, scale_cp_total))
+
+    print(scale_csv_total, scale_csh_total, scale_rho_total, scale_cp_total)
+
+    # Depth scaling
+    _progress("Apply depth dependent damping ...")
+    max_csv = []
+    max_csh = []
+    max_rho = []
+    max_cp = []
+
+    for n in range(grad_csv.nsubvol):
+        max_csv.append(np.max(np.abs(grad_csv.m[n].v[:, :, :])))
+        max_csh.append(np.max(np.abs(grad_csh.m[n].v[:, :, :])))
+        max_rho.append(np.max(np.abs(grad_rho.m[n].v[:, :, :])))
+        max_cp.append(np.max(np.abs(grad_cp.m[n].v[:, :, :])))
+
+    max_csv = max(max_csv)
+    max_csh = max(max_csh)
+    max_rho = max(max_rho)
+    max_cp = max(max_cp)
+    damp = 0.3
+
+    for n in range(grad_csv.nsubvol):
+        for k in range(len(grad_csv.m[n].r) - 1):
+            grad_csv.m[n].v[:, :, k] = grad_csv.m[n].v[:, :, k] / (
+            damp * max_csv + np.max(np.abs(grad_csv.m[n].v[:, :, k])))
+            grad_csh.m[n].v[:, :, k] = grad_csh.m[n].v[:, :, k] / (
+            damp * max_csh + np.max(np.abs(grad_csh.m[n].v[:, :, k])))
+            grad_rho.m[n].v[:, :, k] = grad_rho.m[n].v[:, :, k] / (
+            damp * max_rho + np.max(np.abs(grad_rho.m[n].v[:, :, k])))
+            grad_cp.m[n].v[:, :, k] = grad_cp.m[n].v[:, :, k] / (
+            damp * max_cp + np.max(np.abs(grad_cp.m[n].v[:, :, k])))
+
+
+    grad_csv = scale_csv_total * grad_csv
+    grad_csh = scale_csh_total * grad_csh
+    grad_rho = scale_rho_total * grad_rho
+    grad_cp = scale_cp_total * grad_cp
+
+    # Compute and store updates.
+    gamma = [0.15, 0.5, 1.0]
+
+    final_model_dir = "TEST_MODELS"
+
+    for k in np.arange(len(gamma)):
+        _progress("Computing update with step-length %.3f" % gamma[k])
+        dir_test_model = os.path.join(final_model_dir, str(gamma[k]))
+        os.makedirs(dir_test_model)
+
+        csv_new = csv + -1.0 * gamma[k] * grad_csv
+        csh_new = csh + -1.0 * gamma[k] * grad_csh
+        rho_new = rho + -1.0 * gamma[k] * grad_rho
+        cp_new = cp + -1.0 * gamma[k] * grad_cp
+
+        csv_new.write(dir_test_model, 'vsv')
+        csh_new.write(dir_test_model, 'vsh')
+        rho_new.write(dir_test_model, 'rho')
+        cp_new.write(dir_test_model, 'vp')
+
