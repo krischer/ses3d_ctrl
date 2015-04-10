@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pylab as plt
 
 
 def plot_q(model='cem', r_min=0.0, r_max=6371.0, dr=1.0):
@@ -13,6 +12,7 @@ def plot_q(model='cem', r_min=0.0, r_max=6371.0, dr=1.0):
 
     Currently available models (model): cem, prem, ql6
     """
+    import matplotlib.pylab as plt
 
     r = np.arange(r_min, r_max + dr, dr)
     q = np.zeros(len(r))

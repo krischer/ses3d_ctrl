@@ -6,8 +6,6 @@ from __future__ import absolute_import
 import os
 
 import numpy as np
-import matplotlib.pylab as plt
-from mpl_toolkits.basemap import Basemap
 
 from .import colormaps as cm
 from .import rotation as rot
@@ -839,6 +837,8 @@ class SES3DModel(object):
         Prevents plotting of the slice.
 
         """
+        import matplotlib.pylab as plt
+        from mpl_toolkits.basemap import Basemap
 
         radius = 6371.0 - depth
 
@@ -989,6 +989,8 @@ class SES3DModel(object):
         min_val_plot, max_val_plot=minimum and maximum values of the colour
         scale colormap='tomo','mono'
         """
+        import matplotlib.pylab as plt
+        from mpl_toolkits.basemap import Basemap
         # set up a map and colourmap
 
         if self.global_regional == 'regional':

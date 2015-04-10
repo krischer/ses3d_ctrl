@@ -22,6 +22,15 @@ class SuperMuc(SiteConfig):
     def mpi_compiler_flags(self):
         return ["-std=c99"]
 
+    @property
+    def fortran_compiler(self):
+        return "gfortran"
+
+    @property
+    def fortran_compiler_flags(self):
+        # gfortran cuts lines after 132 chars by default...
+        return ["-ffree-line-length-none"]
+
     def _cancel_job(self, job_name):
         status = self.get_status(job_name)
 
