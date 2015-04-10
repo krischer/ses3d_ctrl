@@ -2,16 +2,18 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import, print_function
 
-import click
 import glob
 import hashlib
 import io
 import json
+import multiprocessing
 import os
 import shutil
 import subprocess
 import sys
 import tarfile
+
+import click
 
 from . import utils
 from .gradients import sum_kernels
@@ -800,225 +802,195 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
 
     dims = utils.read_boxfile(boxfile)
 
-    if os.path.exists(output_folder):
-        raise ValueError("Folder %s already exists" % output_folder)
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-    # Write the blockfiles.
-    _progress("Creating block files ...")
+    # Write the blockfiles, if they don't exist yet.
     blockfile_folder = os.path.join(output_folder, "MODELS", "MODELS_3D")
-    os.makedirs(blockfile_folder)
+    blockfiles_exist = True
+    if not os.path.exists(blockfile_folder):
+        blockfiles_exist = False
+        os.makedirs(blockfile_folder)
 
-    buf = 0.02
-    # Currently each element will be projected to 5 points per dimension.
-    utils.write_ses3d_blockfiles(
-        output_folder=blockfile_folder,
-        x_min=dims["x_min"] - buf * dims["x_range"],
-        x_max=dims["x_max"] + buf * dims["x_range"],
-        x_count=dims["element_count_x"] * 5,
-        y_min=dims["y_min"] - buf * dims["y_range"],
-        y_max=dims["y_max"] + buf * dims["y_range"],
-        y_count=dims["element_count_y"] * 5,
-        # blockfiles are in km whereas boxfiles are in m...
-        z_min=dims["z_min"] / 1000.0 - buf * dims["z_range"] / 1000.0,
-        z_max=dims["z_max"] / 1000.0 + buf * dims["z_range"] / 1000.0,
-        z_count=dims["element_count_z"] * 5,
-    )
+    if blockfiles_exist:
+        blockfiles = [os.path.join(blockfile_folder, _i) for _i in [
+                      "block_x", "block_y", "block_z"]]
+        for blockfile in blockfiles:
+            if not os.path.exists(blockfile):
+                blockfiles_exist = False
+                break
+
+    if blockfiles_exist:
+        _progress("Blockfiles already exist...")
+    else:
+        _progress("Creating block files ...")
+
+        buf = 0.02
+        # Currently each element will be projected to 5 points per dimension.
+        utils.write_ses3d_blockfiles(
+            output_folder=blockfile_folder,
+            x_min=dims["x_min"] - buf * dims["x_range"],
+            x_max=dims["x_max"] + buf * dims["x_range"],
+            x_count=dims["element_count_x"] * 5,
+            y_min=dims["y_min"] - buf * dims["y_range"],
+            y_max=dims["y_max"] + buf * dims["y_range"],
+            y_count=dims["element_count_y"] * 5,
+            # blockfiles are in km whereas boxfiles are in m...
+            z_min=dims["z_min"] / 1000.0 - buf * dims["z_range"] / 1000.0,
+            z_max=dims["z_max"] / 1000.0 + buf * dims["z_range"] / 1000.0,
+            z_count=dims["element_count_z"] * 5,
+        )
 
     # Copy the boxfiles.
-    _progress("Copying boxfile ...")
     boxfile_folder = os.path.join(output_folder, "MODELS", "MODELS")
-    os.makedirs(boxfile_folder)
-    shutil.copy(boxfile, os.path.join(boxfile_folder, "boxfile"))
+    boxfile_name = os.path.join(boxfile_folder, "boxfile")
+    if not os.path.exists(boxfile_name):
+        _progress("Copying boxfile ...")
+        if not os.path.exists(boxfile_folder):
+            os.makedirs(boxfile_folder)
+        shutil.copy(boxfile, os.path.join(boxfile_name))
+    else:
+        _progress("Boxfile already exists ...")
 
-    _progress("Extracting and compiling the Fortran code ...")
-    _check_ses3d_md5()
-
+    # Compile the source code if necessary.
     src_and_binary_folder = os.path.join(output_folder, "SRC")
-    os.makedirs(src_and_binary_folder)
+    if not os.path.exists(src_and_binary_folder):
+        _progress("Extracting and compiling the Fortran code ...")
+        _check_ses3d_md5()
 
-    filenames = ["ses3d_modules.f90", "project_kernel.f90",
-                 "project_model.f90"]
+        os.makedirs(src_and_binary_folder)
 
-    with tarfile.open(SES3D_PATH, "r:gz") as tf:
-        for member in tf.getmembers():
-            name = member.name
-            if "TOOLS/SOURCE" not in name:
-                continue
-            fname = os.path.basename(name)
-            if fname not in filenames:
-                continue
-            with open(os.path.join(src_and_binary_folder, fname), "wb") as fh:
-                fh.write(tf.extractfile(member).read())
+        filenames = ["ses3d_modules.f90", "project_kernel.f90",
+                     "project_model.f90"]
 
-    # Now read the project_kernel.f90 file and patch the character limit.
-    # XXX: Fix this if SES3D updates eventually.
-    fname = os.path.join(src_and_binary_folder, "project_kernel.f90")
-    with open(fname, "r") as fh:
-        src_code = fh.read()
-    with open(fname, "w") as fh:
-        src_code = src_code.replace(
-            "character(len=140) :: fn_grad, fn_output",
-            "character(len=512) :: fn_grad, fn_output")
-        src_code = src_code.replace(
-            "character(len=60) :: junk, fn",
-            "character(len=512) :: junk, fn")
-        fh.write(src_code)
+        with tarfile.open(SES3D_PATH, "r:gz") as tf:
+            for member in tf.getmembers():
+                name = member.name
+                if "TOOLS/SOURCE" not in name:
+                    continue
+                fname = os.path.basename(name)
+                if fname not in filenames:
+                    continue
+                with open(os.path.join(src_and_binary_folder, fname), "wb") as fh:
+                    fh.write(tf.extractfile(member).read())
 
-    # Patch the project_model.f90 file.
-    fname = os.path.join(src_and_binary_folder, "project_model.f90")
-    with open(fname, "r") as fh:
-        src_code = fh.read()
-    with open(fname, "w") as fh:
-        src_code = src_code.replace(
-            "character(len=60) :: junk, fn, cit",
-            "character(len=512) :: junk, fn, cit")
-        src_code = src_code.replace(
-            "character(len=140) :: fn_model, fn_output",
-            "character(len=512) :: fn_model, fn_output")
-        fh.write(src_code)
+        # Now read the project_kernel.f90 file and patch the character limit.
+        # XXX: Fix this if SES3D updates eventually.
+        fname = os.path.join(src_and_binary_folder, "project_kernel.f90")
+        with open(fname, "r") as fh:
+            src_code = fh.read()
+        with open(fname, "w") as fh:
+            src_code = src_code.replace(
+                "character(len=140) :: fn_grad, fn_output",
+                "character(len=512) :: fn_grad, fn_output")
+            src_code = src_code.replace(
+                "character(len=60) :: junk, fn",
+                "character(len=512) :: junk, fn")
+            fh.write(src_code)
 
-    # Also patch the modules file.
-    nx_max = dims["element_count_x"] / dims["processors_in_x"]
-    ny_max = dims["element_count_y"] / dims["processors_in_y"]
-    nz_max = dims["element_count_z"] / dims["processors_in_z"]
+        # Patch the project_model.f90 file.
+        fname = os.path.join(src_and_binary_folder, "project_model.f90")
+        with open(fname, "r") as fh:
+            src_code = fh.read()
+        with open(fname, "w") as fh:
+            src_code = src_code.replace(
+                "character(len=60) :: junk, fn, cit",
+                "character(len=512) :: junk, fn, cit")
+            src_code = src_code.replace(
+                "character(len=140) :: fn_model, fn_output",
+                "character(len=512) :: fn_model, fn_output")
+            fh.write(src_code)
 
-    fname = os.path.join(src_and_binary_folder, "ses3d_modules.f90")
-    with open(fname, "r") as fh:
-        src_code = fh.read()
-    with open(fname, "w") as fh:
-        src_code = src_code.replace(
-            "integer, parameter :: nx_max=22",
-            "integer, parameter :: nx_max=%i" % nx_max)
-        src_code = src_code.replace(
-            "integer, parameter :: ny_max=27",
-            "integer, parameter :: ny_max=%i" % ny_max)
+        # Also patch the modules file.
+        nx_max = dims["element_count_x"] / dims["processors_in_x"]
+        ny_max = dims["element_count_y"] / dims["processors_in_y"]
+        nz_max = dims["element_count_z"] / dims["processors_in_z"]
 
-        src_code = src_code.replace(
-            "integer, parameter :: nz_max=7",
-            "integer, parameter :: nz_max=%i" % nz_max)
+        fname = os.path.join(src_and_binary_folder, "ses3d_modules.f90")
+        with open(fname, "r") as fh:
+            src_code = fh.read()
+        with open(fname, "w") as fh:
+            src_code = src_code.replace(
+                "integer, parameter :: nx_max=22",
+                "integer, parameter :: nx_max=%i" % nx_max)
+            src_code = src_code.replace(
+                "integer, parameter :: ny_max=27",
+                "integer, parameter :: ny_max=%i" % ny_max)
 
-        fh.write(src_code)
+            src_code = src_code.replace(
+                "integer, parameter :: nz_max=7",
+                "integer, parameter :: nz_max=%i" % nz_max)
 
-    # Compile the project_kernels executable.
-    source_code_files = ["ses3d_modules.f90", "project_kernel.f90"]
-    project_kernel_executable = "project_kernel"
-    config.site.compile_fortran_files(
-        source_code_files=source_code_files,
-        executable=project_kernel_executable, cwd=src_and_binary_folder)
+            fh.write(src_code)
 
-    # Compile the project_model executable.
-    source_code_files = ["ses3d_modules.f90", "project_model.f90"]
-    project_model_executable = "project_model"
-    config.site.compile_fortran_files(
-        source_code_files=source_code_files,
-        executable=project_model_executable, cwd=src_and_binary_folder)
+        # Compile the project_kernels executable.
+        source_code_files = ["ses3d_modules.f90", "project_kernel.f90"]
+        project_kernel_executable = "project_kernel"
+        config.site.compile_fortran_files(
+            source_code_files=source_code_files,
+            executable=project_kernel_executable, cwd=src_and_binary_folder)
 
-    _progress("Projecting model ...")
+        # Compile the project_model executable.
+        source_code_files = ["ses3d_modules.f90", "project_model.f90"]
+        project_model_executable = "project_model"
+        config.site.compile_fortran_files(
+            source_code_files=source_code_files,
+            executable=project_model_executable, cwd=src_and_binary_folder)
 
-    # Launch it. This will always launch it on the login node/local CPU but
-    # that should be ok.
-    full_name = os.path.join(os.path.abspath(src_and_binary_folder),
-                             os.path.basename(project_model_executable))
-    p = subprocess.Popen(full_name,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT,
-                         stdin=subprocess.PIPE,
-                         cwd=os.path.abspath(src_and_binary_folder),
-                         bufsize=0)
-    out = p.stdout.readline()
-    while out:
-        line = out
-        line = line.strip()
+    if not os.path.exists(src_and_binary_folder):
+        _progress("Fortran code has already been compiled ...")
 
-        if verbose:
-            print(line)
+    # Now collect the jobs to be done. As this is fairly expensive it can
+    # be parallelized.
 
-        if line.startswith("directory for model files"):
-            answer = "'%s%s'\n" % (
-                os.path.relpath(model_path, src_and_binary_folder),
-                os.path.sep)
-            p.stdin.write(answer)
-            if verbose:
-                print(answer.strip())
+    jobs_to_be_done = []
 
-        elif line.startswith("directory for output:"):
-            answer = "'%s%s'\n" % (
-                os.path.relpath(os.path.join(output_folder, "MODELS",
-                                             "MODELS_3D"),
-                                src_and_binary_folder),
-                os.path.sep)
-            p.stdin.write(answer)
-            if verbose:
-                print(answer.strip())
+    # Check if the models files exist, otherwise add the model projection to
+    # the list of jobs that need to be done.
+    final_model_folder = os.path.join(output_folder, "MODELS", "MODELS_3D")
+    model_files = [os.path.join(final_model_folder, _i)
+                   for _i in ["rho", "vp", "vsv", "vsh"]]
+    model_files_exist = True
+    for filename in model_files:
+        if not os.path.exists(filename):
+            model_files_exist = False
+            break
+    if not model_files_exist:
+        jobs_to_be_done.append(
+            {"job_type": "project_model",
+             "executable": os.path.join(src_and_binary_folder,
+                                        "project_model"),
+             "model_path": model_path,
+             "output_folder": output_folder,
+             "verbose": verbose
+             })
+    else:
+        _progress("Model has already been projected ...")
 
-        out = p.stdout.readline()
-
-    p.wait()
-
-    kernel_output_dirs = []
-
+    # Same with the kernels.
     for kernel in kernels:
-        _progress("Projecting kernel %s ..." % kernel)
-        # Launch it. This will always launch it on the login node/local CPU but
-        # that should be ok.
-        full_name = os.path.join(os.path.abspath(src_and_binary_folder),
-                                 os.path.basename(project_kernel_executable))
-        p = subprocess.Popen(full_name,
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT,
-                             stdin=subprocess.PIPE,
-                             cwd=os.path.abspath(src_and_binary_folder),
-                             bufsize=0)
-        out = p.stdout.readline()
-        while out:
-            line = out
-            line = line.strip()
+        if not os.path.exists(os.path.join(output_folder, kernel)):
+            jobs_to_be_done.append({
+                "job_type": "project_kernel",
+                 "executable": os.path.join(src_and_binary_folder,
+                                            "project_kernel"),
+                 "kernel_folder": kernel,
+                 "output_folder": output_folder,
+                 "blockfile_folder": blockfile_folder,
+                 "verbose": verbose
+             })
+        else:
+            _progress("Kernel %s has already been projected ..." % kernel)
 
-            if verbose:
-                print(line)
-
-            if line.startswith("project visco-elastic kernels"):
-                answer = "0\n"
-                p.stdin.write(answer)
-                if verbose:
-                    print(answer.strip())
-
-            elif line.startswith("directory for sensitivity densities"):
-                answer = "'%s%s'\n" % (
-                    os.path.relpath(kernel, src_and_binary_folder),
-                    os.path.sep)
-                p.stdin.write(answer)
-                if verbose:
-                    print(answer.strip())
-
-            elif line.startswith("directory for output:"):
-                answer = "'%s%s'\n" % (
-                    os.path.relpath(output_folder, src_and_binary_folder),
-                    os.path.sep)
-                p.stdin.write(answer)
-                if verbose:
-                    print(answer.strip())
-
-            out = p.stdout.readline()
-
-        p.wait()
-
-        final_dir = os.path.join(output_folder, os.path.basename(kernel))
-        kernel_output_dirs.append(final_dir)
-        os.makedirs(final_dir)
-        for filename in glob.glob(os.path.join(output_folder, "gradient_*")):
-            shutil.move(filename, os.path.join(
-                final_dir, os.path.basename(filename)))
-        # The block files are also needed for the later kernel reading.
-        shutil.copy(os.path.join(blockfile_folder, "block_x"),
-                    os.path.join(final_dir, "block_x"))
-        shutil.copy(os.path.join(blockfile_folder, "block_y"),
-                    os.path.join(final_dir, "block_y"))
-        shutil.copy(os.path.join(blockfile_folder, "block_z"),
-                    os.path.join(final_dir, "block_z"))
+    distribute_jobs(jobs_to_be_done)
 
     _progress("Summing up kernels ...")
     summed_kernel_dir = os.path.join(output_folder, "SUMMED_GRADIENT")
+    kernel_output_dirs = [os.path.join(output_folder, _i) for _i in kernels]
+    for i in kernel_output_dirs:
+        if os.path.exists(i):
+            continue
+        raise ValueError("Folder %s does not exists." % i)
     sum_kernels(kernel_dirs=kernel_output_dirs,
                 output_dir=summed_kernel_dir)
     # Also copy the boxfiles to the summed kernels!
@@ -1028,3 +1000,165 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
                 os.path.join(summed_kernel_dir, "block_y"))
     shutil.copy(os.path.join(blockfile_folder, "block_z"),
                 os.path.join(summed_kernel_dir, "block_z"))
+
+
+def distribute_jobs(jobs):
+    if not jobs:
+        _progress("No jobs to be done ...")
+
+    cpu_count = multiprocessing.cpu_count()
+    cpu_count = min(cpu_count, len(jobs))
+
+    _progress("Distributing %i jobs on %i cores ..." % (
+        len(jobs), cpu_count))
+
+    pool = multiprocessing.Pool(processes=cpu_count)
+    import pprint
+    pprint.pprint(jobs)
+    pool.map(_do_job, jobs)
+
+
+def _do_job(parameters):
+    job_type = parameters["job_type"]
+    del parameters["job_type"]
+    if job_type == "project_model":
+        project_model(
+            executable=parameters["executable"],
+            model_path=parameters["model_path"],
+            output_folder=parameters["output_folder"],
+            verbose=parameters["verbose"])
+    elif job_type == "project_kernel":
+        project_kernel(
+            executable=parameters["executable"],
+            kernel_folder=parameters["kernel_folder"],
+            output_folder=parameters["output_folder"],
+            blockfile_folder=parameters["blockfile_folder"],
+            verbose=parameters["verbose"])
+    else:
+        raise NotImplementedError
+
+
+def project_model(executable, model_path, output_folder, verbose=False):
+    """
+    Projects the model using the SES3D tools.
+
+    :param executable: The path to the executable.
+    :param model_path: The folder of the model on the spectral element grid.
+    :param output_folder: The output folder. The projected model will be
+        saved in output_folder/MODELS/MODELS_3D
+    :param verbose: Print information from the underlying project_model
+        executable or not.
+    """
+    _progress("Projecting model ...")
+    executable = os.path.abspath(executable)
+    p = subprocess.Popen(executable,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         stdin=subprocess.PIPE,
+                         cwd=os.path.dirname(executable),
+                         bufsize=0)
+    out = p.stdout.readline()
+
+    output_model_folder = os.path.join(output_folder, "MODELS", "MODELS_3D")
+    if not os.path.exists(output_model_folder):
+        os.makedirs(output_model_folder)
+
+    while out:
+        line = out
+        line = line.strip()
+
+        if verbose:
+            print(line)
+
+        if line.startswith("directory for model files"):
+            answer = "'%s%s'\n" % (
+                os.path.relpath(model_path, os.path.dirname(executable)),
+                os.path.sep)
+            p.stdin.write(answer)
+            if verbose:
+                print(answer.strip())
+
+        elif line.startswith("directory for output:"):
+            answer = "'%s%s'\n" % (
+                os.path.relpath(output_model_folder,
+                                os.path.dirname(executable)),
+                os.path.sep)
+            p.stdin.write(answer)
+            if verbose:
+                print(answer.strip())
+
+        out = p.stdout.readline()
+    p.wait()
+    _progress("Projected model.")
+
+
+def project_kernel(executable, kernel_folder, output_folder,
+                   blockfile_folder, verbose=False):
+    """
+    Project a kernel using the SES3D project_kernels program.
+
+    :param executable: Path to the project_kernel executable.
+    :param kernel_folder: The folder with the kernels on the spectral
+        element grid.
+    :param output_folder: The output folder. Will be saved in a subfolder of
+        this with the same name as the input folder.
+    :param blockfile_folder: The folder containing blockfiles for the kernel.
+    :param verbose: Print information from the underlying project_model
+        executable or not.
+    """
+    kernel_name = os.path.basename(kernel_folder)
+    _progress("Projecting kernel %s ..." % kernel_name)
+
+    final_dir = os.path.join(output_folder, kernel_name)
+    os.makedirs(final_dir)
+
+    executable = os.path.abspath(executable)
+    p = subprocess.Popen(executable,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         stdin=subprocess.PIPE,
+                         cwd=os.path.dirname(executable),
+                         bufsize=0)
+    out = p.stdout.readline()
+    while out:
+        line = out
+        line = line.strip()
+
+        if verbose:
+            print(line)
+
+        if line.startswith("project visco-elastic kernels"):
+            answer = "0\n"
+            p.stdin.write(answer)
+            if verbose:
+                print(answer.strip())
+
+        elif line.startswith("directory for sensitivity densities"):
+            answer = "'%s%s'\n" % (
+                os.path.relpath(kernel_folder, os.path.dirname(executable)),
+                os.path.sep)
+            p.stdin.write(answer)
+            if verbose:
+                print(answer.strip())
+
+        elif line.startswith("directory for output:"):
+            answer = "'%s%s'\n" % (
+                os.path.relpath(final_dir, os.path.dirname(executable)),
+                os.path.sep)
+            p.stdin.write(answer)
+            if verbose:
+                print(answer.strip())
+
+        out = p.stdout.readline()
+
+    p.wait()
+
+    # The block files are also needed for the later kernel reading.
+    shutil.copy(os.path.join(blockfile_folder, "block_x"),
+                os.path.join(final_dir, "block_x"))
+    shutil.copy(os.path.join(blockfile_folder, "block_y"),
+                os.path.join(final_dir, "block_y"))
+    shutil.copy(os.path.join(blockfile_folder, "block_z"),
+                os.path.join(final_dir, "block_z"))
+
+    _progress("Projected kernel %s." % kernel_name)
