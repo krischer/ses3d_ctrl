@@ -982,7 +982,7 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
         else:
             _progress("Kernel %s has already been projected ..." % kernel)
 
-    distribute_jobs(jobs_to_be_done)
+    distribute_projection_jobs(jobs_to_be_done)
 
     _progress("Summing up kernels ...")
     summed_kernel_dir = os.path.join(output_folder, "SUMMED_GRADIENT")
@@ -1002,10 +1002,19 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
                 os.path.join(summed_kernel_dir, "block_z"))
 
 
-def distribute_jobs(jobs):
+def distribute_projection_jobs(jobs):
+    """
+    Distributes the projection jobs on as many cores as the machine has
+    available.
+
+    :param jobs: A list of dictionaries containing job information that must
+        be understood by the _do_projection_job() function.
+    """
     if not jobs:
         _progress("No jobs to be done ...")
+        return
 
+    # Use all available cores; at most as many as jobs are available.
     cpu_count = multiprocessing.cpu_count()
     cpu_count = min(cpu_count, len(jobs))
 
@@ -1013,14 +1022,20 @@ def distribute_jobs(jobs):
         len(jobs), cpu_count))
 
     pool = multiprocessing.Pool(processes=cpu_count)
-    import pprint
-    pprint.pprint(jobs)
-    pool.map(_do_job, jobs)
+    pool.map(_do_projection_job, jobs)
 
 
-def _do_job(parameters):
+def _do_projection_job(parameters):
+    """
+    Executes a single projection job. Its a separate function as function
+    used for multiprocessing must be serializable with the pickle module.
+
+    :param parameters: A dictionary describing a job. Read the code to
+        understand what it must contain.
+    """
     job_type = parameters["job_type"]
     del parameters["job_type"]
+
     if job_type == "project_model":
         project_model(
             executable=parameters["executable"],
