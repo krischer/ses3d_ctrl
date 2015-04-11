@@ -312,8 +312,8 @@ class SES3DModel(object):
         else:
             self.global_regional = "regional"
 
-            self.d_lat = 5.0
-            self.d_lon = 5.0
+        self.d_lat = 5.0
+        self.d_lon = 5.0
 
     def write(self, directory, filename, verbose=False):
         """

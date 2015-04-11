@@ -78,6 +78,20 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         pass
 
     @abc.abstractproperty
+    def c_compiler(self):
+        """
+        Name of the C compiler.
+        """
+        pass
+
+    @abc.abstractproperty
+    def c_compiler_flags(self):
+        """
+        Flags for the C compiler.
+        """
+        pass
+
+    @abc.abstractproperty
     def fortran_compiler(self):
         """
         Name of the Fortran compiler.
@@ -321,6 +335,21 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         """
         args = [self.fortran_compiler]
         args.extend(self.fortran_compiler_flags)
+        args.extend(source_code_files)
+        args.append("-o")
+        args.append(executable)
+        subprocess.check_call(args, cwd=cwd)
+
+    def compile_c_files(self, source_code_files, executable, cwd):
+        """
+        Compiles C files to an executable.
+
+        :param source_code_files: The input filenames.
+        :param executable: The output filename of the executable.
+        :param cwd: The working directory.
+        """
+        args = [self.c_compiler]
+        args.extend(self.c_compiler_flags)
         args.extend(source_code_files)
         args.append("-o")
         args.append(executable)

@@ -209,6 +209,137 @@ def _progress(msg, warn=False):
         fg = "green"
     click.echo(click.style(msg, fg=fg))
 
+@cli.command()
+@click.option("--output-folder", required=True,
+              type=click.Path(exists=False, dir_okay=True, writable=True),
+              help="Output folder.")
+@click.option("--input-files", type=click.Path(exists=True, readable=True),
+              required=True, help="Input file folder. Use to get the "
+                                  "required model dimensions.")
+@click.argument("model-path", type=click.Path(exists=True, readable=True))
+@pass_config
+def model_to_spectral_element_grid(config, output_folder, input_files,
+                                   model_path):
+    """
+    Projects the given model to the spectral element grid.
+    """
+    if os.path.exists(output_folder):
+        raise ValueError("Folder %s already exists." % output_folder)
+    os.makedirs(output_folder)
+
+    if not os.path.exists(input_files) or not os.path.isdir(input_files):
+        raise ValueError("Input files folder does not exist/not a folder")
+
+    if not os.path.exists(model_path) or not os.path.isdir(model_path):
+        raise ValueError("Model path does not exist/not a folder.")
+
+    # Unpack the sources.
+    _progress("Extracting and compiling the C code ...")
+
+    src_folder = os.path.join(output_folder, "MODELS", "SOURCE")
+    os.makedirs(src_folder)
+
+    with tarfile.open(SES3D_PATH, "r:gz") as tf:
+        for member in tf.getmembers():
+            if not member.isfile():
+                continue
+            name = member.name
+            if os.path.dirname(name) != "ses3d_r07_b/MODELS/SOURCE":
+                continue
+            fname = os.path.basename(name)
+            with open(os.path.join(src_folder, fname), "wb") as fh:
+                fh.write(tf.extractfile(member).read())
+
+    # First compile generate_model.
+    source_code_files = ["generate_models.c", "gm_global.c", "gm_lib.c",
+                         "models_1d.c"]
+    generate_model_executable = "generate_model"
+    config.site.compile_c_files(
+        source_code_files=source_code_files,
+        executable=generate_model_executable, cwd=src_folder)
+
+    # Now compile add_perturbation.
+    source_code_files = ["add_perturbation.c"]
+    add_perturbation_executable = "add_perturbation"
+    config.site.compile_c_files(
+        source_code_files=source_code_files,
+        executable=add_perturbation_executable, cwd=src_folder)
+
+    # Setup some required paths.
+    input_path = os.path.join(output_folder, "INPUT")
+    models_path = os.path.join(output_folder, "MODELS", "MODELS")
+    models_3d_path = os.path.join(output_folder, "MODELS", "MODELS_3D")
+    temp_q_models_path = os.path.join(output_folder, "MODELS", "TEMP_Q")
+    os.makedirs(input_path)
+    os.makedirs(models_path)
+    os.makedirs(models_3d_path)
+    os.makedirs(temp_q_models_path)
+
+    # Copy the model files.
+    _progress("Copying model files ...")
+    files = ["block_x", "block_y", "block_z", "drho", "dvsv", "dvsh", "dvp"]
+    for filename in files:
+        shutil.copy(os.path.join(model_path, filename),
+                    os.path.join(models_3d_path, filename))
+
+    # Read the input files.
+    input_files = SES3DInputFiles(input_files)
+
+    # Now its kind of a multistep procedure that is not pretty! Eventually
+    # we should just edit the SES3D source code!
+    # 1. Generate models with type 4. This will give us a PREM Q.
+    # 2. Generate models wit type 3 which will set all elastic parameters to 0.
+    # 3. Copy the Q from the first run to the folder with the second run.
+    # 4. Add the perturbations which in this case are just the model.
+    input_files.setup["model_type"] = 4
+    input_files.write(input_path, "", "")
+
+    _progress("Run generate_model for the first time ...")
+    p = subprocess.Popen(os.path.abspath(os.path.join(
+                            src_folder, generate_model_executable)),
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         cwd=os.path.abspath(src_folder))
+    p.wait()
+
+    _progress("Moving Q model files ...")
+    q_files = glob.glob(os.path.join(models_path, "Q*"))
+    for filename in q_files:
+        shutil.move(filename,
+                    os.path.join(temp_q_models_path,
+                                 os.path.basename(filename)))
+
+    input_files.setup["model_type"] = 3
+    shutil.rmtree(input_path)
+    os.makedirs(input_path)
+    input_files.write(input_path, "", "")
+
+    _progress("Run generate_model for the second time ...")
+    p = subprocess.Popen(os.path.abspath(os.path.join(
+                            src_folder, generate_model_executable)),
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT,
+                         cwd=os.path.abspath(src_folder))
+    p.wait()
+
+    _progress("Moving Q model files back ...")
+    q_files = glob.glob(os.path.join(temp_q_models_path, "Q*"))
+    for filename in q_files:
+        shutil.move(filename,
+                    os.path.join(models_path,
+                                 os.path.basename(filename)))
+
+    shutil.rmtree(temp_q_models_path)
+
+    _progress("Run add_perturbations ...")
+    p = subprocess.Popen(os.path.abspath(os.path.join(
+        src_folder, add_perturbation_executable)),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        cwd=os.path.abspath(src_folder))
+    p.wait()
+
+
 
 @cli.command()
 @click.option("--model", type=str, required=True,
@@ -1196,7 +1327,6 @@ def plot_kernel(kernel, depth_in_km, smoothing_iterations):
     if smoothing_iterations:
         m.smooth_horizontal(sigma=smoothing_iterations,
                             filter_type="neighbour")
-    from IPython.core.debugger import Tracer; Tracer(colors="Linux")()
     m.plot_slice(depth_in_km)
 
 
@@ -1315,7 +1445,7 @@ def update_model_steepest_descent(config, smoothing_iterations,
     grad_cp = scale_cp_total * grad_cp
 
     # Compute and store updates.
-    gamma = [0.15, 0.5, 1.0]
+    gamma = [0.15, 0.5, 1.0, 1.5]
 
     final_model_dir = "TEST_MODELS"
 
@@ -1333,4 +1463,3 @@ def update_model_steepest_descent(config, smoothing_iterations,
         csh_new.write(dir_test_model, 'vsh')
         rho_new.write(dir_test_model, 'rho')
         cp_new.write(dir_test_model, 'vp')
-

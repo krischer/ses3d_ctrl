@@ -19,6 +19,14 @@ class LocalGCC(SiteConfig):
         return ["-std=c99"]
 
     @property
+    def c_compiler(self):
+        return "gcc"
+
+    @property
+    def c_compiler_flags(self):
+        return []
+
+    @property
     def fortran_compiler(self):
         return "gfortran"
 
