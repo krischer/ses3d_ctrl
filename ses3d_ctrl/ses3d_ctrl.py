@@ -287,20 +287,17 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
 
     # Now its kind of a multistep procedure that is not pretty! Eventually
     # we should just edit the SES3D source code!
-    # 1. Generate models with type 4. This will give us a PREM Q.
+    # 1. Generate models with type 2. This will give us a PREM Q.
     # 2. Generate models wit type 3 which will set all elastic parameters to 0.
     # 3. Copy the Q from the first run to the folder with the second run.
     # 4. Add the perturbations which in this case are just the model.
-    input_files.setup["model_type"] = 4
+    input_files.setup["model_type"] = 7
     input_files.write(input_path, "", "")
 
     _progress("Run generate_model for the first time ...")
-    p = subprocess.Popen(os.path.abspath(os.path.join(
-                            src_folder, generate_model_executable)),
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT,
-                         cwd=os.path.abspath(src_folder))
-    p.wait()
+    utils.run_process(
+        os.path.abspath(os.path.join(src_folder, generate_model_executable)),
+        cwd=src_folder, _progress=_progress)
 
     _progress("Moving Q model files ...")
     q_files = glob.glob(os.path.join(models_path, "Q*"))
@@ -315,12 +312,9 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
     input_files.write(input_path, "", "")
 
     _progress("Run generate_model for the second time ...")
-    p = subprocess.Popen(os.path.abspath(os.path.join(
-                            src_folder, generate_model_executable)),
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT,
-                         cwd=os.path.abspath(src_folder))
-    p.wait()
+    utils.run_process(
+        os.path.abspath(os.path.join(src_folder, generate_model_executable)),
+        cwd=src_folder, _progress=_progress)
 
     _progress("Moving Q model files back ...")
     q_files = glob.glob(os.path.join(temp_q_models_path, "Q*"))
@@ -332,13 +326,9 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
     shutil.rmtree(temp_q_models_path)
 
     _progress("Run add_perturbations ...")
-    p = subprocess.Popen(os.path.abspath(os.path.join(
-        src_folder, add_perturbation_executable)),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        cwd=os.path.abspath(src_folder))
-    p.wait()
-
+    utils.run_process(
+        os.path.abspath(os.path.join(src_folder, add_perturbation_executable)),
+        cwd=src_folder, _progress=_progress)
 
 
 @cli.command()

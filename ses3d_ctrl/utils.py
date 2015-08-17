@@ -1,5 +1,6 @@
 import math
 import os
+import subprocess
 
 import numpy as np
 
@@ -137,3 +138,32 @@ def write_ses3d_blockfiles(output_folder, x_min, x_max, x_count,
     write_block(x, "x")
     write_block(y, "y")
     write_block(z, "z")
+
+
+def run_process(args, cwd, _progress):
+    """
+    Makes sure the subprocess returned with code 0. If not, it will print
+    stdout and stderr.
+
+    :param args: The executable and arguements in a list.
+    :param cwd: The current working directory.
+    :param _progress: The _progress function used for logging.
+    """
+    p = subprocess.Popen(args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        cwd=os.path.abspath(cwd))
+
+    p.wait()
+    if p.returncode == 0:
+        return p.stdout, p.stderr
+
+    _progress("Process failed with return code: %i" % p.returncode, warn=True)
+    if p.stdout is not None:
+        _progress("stdout:", warn=True)
+        print(p.stdout.read())
+    if p.stderr is not None:
+        _progress("stderr:", warn=True)
+        print(p.stderr.read())
+
+    raise ValueError("Subprocess failed with exit code %i." % p.returncode)
