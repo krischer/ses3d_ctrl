@@ -140,7 +140,7 @@ def write_ses3d_blockfiles(output_folder, x_min, x_max, x_count,
     write_block(z, "z")
 
 
-def run_process(args, cwd, _progress):
+def run_process(args, cwd, _progress=None):
     """
     Makes sure the subprocess returned with code 0. If not, it will print
     stdout and stderr.
@@ -149,6 +149,10 @@ def run_process(args, cwd, _progress):
     :param cwd: The current working directory.
     :param _progress: The _progress function used for logging.
     """
+    if _progress is None:
+        def _progress(msg, *args, **kwargs):
+            print(msg)
+
     p = subprocess.Popen(args,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

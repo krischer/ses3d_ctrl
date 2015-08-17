@@ -10,10 +10,9 @@ import enum
 import io
 import os
 import six
-import subprocess
 import uuid
 
-from ..utils import get_template
+from ..utils import get_template, run_process
 
 
 SES3D_EXECUTABLE = "MAIN/ses3d"
@@ -327,7 +326,7 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         args.append("-o")
         args.append(SES3D_EXECUTABLE)
         args.extend(SES3D_SOURCES)
-        subprocess.check_call(args, cwd=cwd)
+        run_process(args, cwd=cwd)
 
     def compile_fortran_files(self, source_code_files, executable, cwd):
         """
@@ -342,7 +341,7 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         args.extend(source_code_files)
         args.append("-o")
         args.append(executable)
-        subprocess.check_call(args, cwd=cwd)
+        run_process(args, cwd=cwd)
 
     def compile_c_files(self, source_code_files, executable, cwd):
         """
@@ -357,4 +356,4 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         args.extend(source_code_files)
         args.append("-o")
         args.append(executable)
-        subprocess.check_call(args, cwd=cwd)
+        run_process(args, cwd=cwd)
