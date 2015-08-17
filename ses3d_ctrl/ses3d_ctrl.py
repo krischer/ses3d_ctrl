@@ -8,6 +8,7 @@ import io
 import json
 import multiprocessing
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -250,6 +251,19 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
             with open(os.path.join(src_folder, fname), "wb") as fh:
                 fh.write(tf.extractfile(member).read())
 
+    # Modify source code files to have proper return codes.
+    gen_mods = os.path.join(src_folder, "generate_models.c")
+    add_per = os.path.join(src_folder, "add_perturbation.c")
+    for filename in (gen_mods, add_per):
+        with io.open(filename, "rt") as fh:
+            src_code = fh.read()
+        # void main() to int main()
+        src_code = re.sub("void\s+main", "int main", src_code)
+        # return 0 at the end.
+        src_code = src_code.strip()[:-1] + "\nreturn 0;\n}\n"
+        with io.open(filename, "wt") as fh:
+            fh.write(src_code)
+
     # First compile generate_model.
     source_code_files = ["generate_models.c", "gm_global.c", "gm_lib.c",
                          "models_1d.c"]
@@ -291,8 +305,11 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
     # 2. Generate models wit type 3 which will set all elastic parameters to 0.
     # 3. Copy the Q from the first run to the folder with the second run.
     # 4. Add the perturbations which in this case are just the model.
-    input_files.setup["model_type"] = 7
+    input_files.setup["model_type"] = 2
     input_files.write(input_path, "", "")
+
+    # Create DATA dir.
+    os.makedirs(os.path.join(output_folder, "DATA", "COORDINATES"))
 
     _progress("Run generate_model for the first time ...")
     utils.run_process(
