@@ -177,7 +177,11 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
     def _stdout_inidicates_job_finished(self, job_name):
         with open(self.get_stdout_file(job_name), "r") as fh:
             # Read the last line.
-            fh.seek(-1024, 2)
+            try:
+                fh.seek(-1024, 2)
+            except IOError:
+                # Might be a very short file....
+                fh.seek(0, 0)
             for line in fh:
                 line = line.strip()
                 if not line:
