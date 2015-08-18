@@ -186,8 +186,11 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
                 if not line:
                     continue
                 last_line = line
-        if last_line.startswith("SES3D_R07_B: End:"):
-            return True
+        try:
+            if last_line.startswith("SES3D_R07_B: End:"):
+                return True
+        except:
+            pass
         return False
 
     def get_log_dir(self, job_name):

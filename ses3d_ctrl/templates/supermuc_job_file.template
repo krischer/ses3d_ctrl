@@ -22,4 +22,4 @@
 #setup of environment
 module unload mpi.ibm
 module load mpi.intel
-mpiexec -n {number_of_cores} {executable}
+mpiexec -n {number_of_cores} ./{executable}
