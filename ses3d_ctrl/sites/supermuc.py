@@ -27,6 +27,14 @@ class SuperMuc(SiteConfig):
         return "gfortran"
 
     @property
+    def c_compiler(self):
+        return "gcc"
+
+    @property
+    def c_compiler_flags(self):
+        return []
+
+    @property
     def fortran_compiler_flags(self):
         # gfortran cuts lines after 132 chars by default...
         return ["-ffree-line-length-none"]
