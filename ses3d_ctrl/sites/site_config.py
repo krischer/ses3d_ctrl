@@ -227,7 +227,8 @@ class SiteConfig(six.with_metaclass(abc.ABCMeta)):
         status = getattr(Status, status.strip().lower())
 
         # Update in case status is running.
-        if status == Status.running or status == Status.waiting:
+        if status == Status.running or status == Status.waiting \
+                or status == Status.unknown:
             status = self._get_status(job_name)
             time = arrow.utcnow()
             self.set_status(job_name, status)

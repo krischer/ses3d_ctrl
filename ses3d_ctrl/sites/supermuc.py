@@ -72,7 +72,7 @@ class SuperMuc(SiteConfig):
             if not line:
                 continue
             name, status, job_id = line.split()
-            if name != job_name:
+            if not job_name.startswith(name):
                 continue
             break
         else:
