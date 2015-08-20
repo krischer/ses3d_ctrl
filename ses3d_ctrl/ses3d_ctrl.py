@@ -710,6 +710,15 @@ def cd(config):
 
 @cli.command()
 @pass_config
+def cd_adjoint(config):
+    """
+    Prints the root working dir to stdour use with "$ `agere cd`".
+    """
+    click.echo("cd " + config.adjoint_dir)
+
+
+@cli.command()
+@pass_config
 def tail(config):
     """
     Tails the output of running jobs.
