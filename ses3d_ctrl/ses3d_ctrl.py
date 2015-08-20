@@ -703,9 +703,9 @@ def clean(config):
 @pass_config
 def cd(config):
     """
-    Prints the root working dir to stdour use with "$ cd `agere cd`".
+    Prints the root working dir to stdour use with "$ `agere cd`".
     """
-    click.echo(config.root_working_dir)
+    click.echo("cd " + config.root_working_dir)
 
 
 @cli.command()
