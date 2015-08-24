@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import time
 
 import click
 import numpy as np
@@ -769,6 +770,67 @@ def ls_output(config, n):
     for _i in contents:
         click.echo("\t%s" % os.path.join(waveform_folder, _i))
 
+
+@cli.command()
+@click.option("--iteration", type=str,
+              required=True, help="The iteration to add the synthetics to.")
+@click.argument("filename", type=click.Path(exists=True, file_okay=True,
+                                            dir_okay=False))
+@click.argument("lasif_project", type=click.Path(exists=True, file_okay=False,
+                                                 dir_okay=True))
+@pass_config
+def untar_synthetics(config, lasif_project, filename, iteration):
+    """
+    Untar a file of synthetics file to the corresponding folder in LASIF.
+    """
+    basename = os.path.basename(filename)
+    if not (basename.endswith(".tar") or basename.endswith(".tar.gz")):
+        raise ValueError("Must be either a tar or tar.gz file.")
+
+    # Import lasif here as its not a hard dependency.
+    _progress("Opening LASIF project ...")
+    from lasif.scripts.lasif_cli import _find_project_comm
+    comm = _find_project_comm(lasif_project, read_only_caches=False)
+    _progress("Parsing iteration %s..." % iteration)
+    # Make sure the iteration exists.
+    it = comm.iterations.get(iteration)
+
+    all_events = list(it.events.keys())
+    _DIR_CACHE = {}
+
+    def get_waveform_folder(event_name):
+        if event_name not in _DIR_CACHE:
+            _DIR_CACHE[event_name] = comm.waveforms.get_waveform_folder(
+                event_name=event_name, data_type="synthetic",
+                tag_or_iteration=it.long_name)
+            if not os.path.exists(_DIR_CACHE[event_name]):
+                os.makedirs(_DIR_CACHE[event_name])
+        return _DIR_CACHE[event_name]
+
+    _progress("Extracting waveform files ...")
+    last_write = None
+    with tarfile.open(filename) as tf:
+        for _i, item in enumerate(tf):
+            if last_write is None or (time.time() - last_write) > 1.0:
+                print("\r\tExtracting file number %i ..." % (_i + 1), end="")
+                last_write = time.time()
+                sys.stdout.flush()
+            if not item.isfile():
+                continue
+            event_name, waveform_name = os.path.split(item.path)
+            if event_name not in all_events:
+                raise ValueError("Event %s not part of iteration %s." % (
+                    event_name, iteration))
+            folder = get_waveform_folder(event_name)
+            waveform_filename = os.path.join(folder, waveform_name)
+            if os.path.exists(waveform_filename):
+                print("\nFile %s already exists. Will be skipped ..." %
+                      waveform_filename)
+                continue
+            with io.open(waveform_filename, "wb") as fh:
+                fh.write(tf.extractfile(item).read())
+    print("\n")
+    _progress("Done")
 
 @cli.command()
 @click.option('--compress', is_flag=True,
