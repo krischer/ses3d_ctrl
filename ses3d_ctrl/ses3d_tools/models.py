@@ -823,7 +823,8 @@ class SES3DModel(object):
         fid.close()
 
     def plot_slice(self, depth, min_val_plot=None, max_val_plot=None,
-                   colormap='tomo', res='i', save_under=None, verbose=False):
+                   colormap='tomo', res='i', save_under=None, verbose=False,
+                   lasif_folder=None):
         """
         plot horizontal slices through an ses3d model
 
@@ -887,6 +888,11 @@ class SES3DModel(object):
         idz_list = []
         N_list = []
 
+        if lasif_folder:
+            from lasif.scripts.lasif_cli import _find_project_comm
+
+            comm = _find_project_comm(lasif_folder, read_only_caches=True)
+
         for k in np.arange(self.nsubvol):
 
             nx = len(self.m[k].lat)
@@ -911,8 +917,24 @@ class SES3DModel(object):
                     print 'true plotting depth: ' + str(6371.0 - r[idz]) + \
                         ' km'
 
-                x, y = m(self.m[k].lon_rot[0:nx - 1, 0:ny - 1],
-                         self.m[k].lat_rot[0:nx - 1, 0:ny - 1])
+                if lasif_folder:
+                    from lasif import rotations
+                    lon = self.m[k].lon_rot[0:nx - 1, 0:ny - 1]
+                    lat = self.m[k].lat_rot[0:nx - 1, 0:ny - 1]
+
+                    lat_r, lon_r = rotations.rotate_lat_lon(
+                        lat.ravel(), lon.ravel(),
+                        comm.project.domain.rotation_axis,
+                        comm.project.domain.rotation_angle_in_degree)
+
+                    lat_r.shape = lat.shape
+                    lon_r.shape = lon.shape
+
+                    x, y = m(lon_r, lat_r)
+
+                else:
+                    x, y = m(self.m[k].lon_rot[0:nx - 1, 0:ny - 1],
+                             self.m[k].lat_rot[0:nx - 1, 0:ny - 1])
                 x_list.append(x)
                 y_list.append(y)
 
@@ -957,7 +979,7 @@ class SES3DModel(object):
         # loop over subvolumes to plot
 
         for k in np.arange(len(N_list)):
-            im = m.pcolor(
+            im = m.pcolormesh(
                 x_list[k], y_list[k], self.m[N_list[k]].v[:, :, idz_list[k]],
                 cmap=my_colormap, vmin=min_val_plot, vmax=max_val_plot)
 

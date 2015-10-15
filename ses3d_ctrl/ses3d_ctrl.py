@@ -348,6 +348,34 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
         os.path.abspath(os.path.join(src_folder, add_perturbation_executable)),
         cwd=src_folder, _progress=_progress)
 
+    # Clean things a bit.
+    _progress("Cleaning up...")
+
+    src_model_folder = models_path
+    dest_model_folder = output_folder
+
+    original_contents = os.listdir(output_folder)
+
+    # files without the profile files.
+    src_files = [_i for _i in os.listdir(src_model_folder) if not
+                 _i.startswith("prof_")]
+
+    # Move model files.
+    for filename in src_files:
+        src_file = os.path.join(src_model_folder, filename)
+        if not os.path.isfile(src_file):
+            continue
+        dest_file = os.path.join(dest_model_folder, filename)
+        shutil.move(src_file, dest_file)
+
+    # Remove all other files.
+    for item in original_contents:
+        filename = os.path.join(output_folder, item)
+        if os.path.isfile(filename):
+            os.remove(filename)
+        else:
+            shutil.rmtree(filename)
+
 
 @cli.command()
 @click.option("--model", type=str, required=True,
@@ -1392,10 +1420,12 @@ def project_kernel(executable, kernel_folder, output_folder,
 @cli.command()
 @click.option("--smoothing-iterations", type=int,
               help="Number of nearest neighbour smoothing iterations.")
+@click.option("--lasif_project",
+              type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.argument("kernel", type=click.Path(exists=True, file_okay=True,
                                           readable=True))
 @click.argument("depth_in_km", type=float)
-def plot_kernel(kernel, depth_in_km, smoothing_iterations):
+def plot_kernel(kernel, depth_in_km, smoothing_iterations, lasif_project):
     """
     Plots the given kernel without rotations or anything.
     """
@@ -1405,22 +1435,35 @@ def plot_kernel(kernel, depth_in_km, smoothing_iterations):
     if smoothing_iterations:
         m.smooth_horizontal(sigma=smoothing_iterations,
                             filter_type="neighbour")
-    m.plot_slice(depth_in_km)
+    m.plot_slice(depth_in_km, lasif_folder=lasif_project)
 
 
 @cli.command()
 @click.option("--smoothing-iterations", type=int, required=True,
               help="Number of nearest neighbour smoothing iterations.")
+@click.option("--output_directory",
+              type=click.Path(exists=False, dir_okay=True, writable=True),
+              required=True, help="The output directory.")
 @click.argument("gradient_dir", type=click.Path(exists=True, dir_okay=True,
                                                 readable=True))
-@click.argument("model_dir", type=click.Path(exists=True, dir_okay=True,
-                                             readable=True))
 @pass_config
-def update_model_steepest_descent(config, smoothing_iterations,
-                                  gradient_dir, model_dir):
+def smooth_and_precondition_gradients(config, smoothing_iterations,
+                                      gradient_dir, output_directory):
     """
-    Updates the chosen model with any gradient.
+    Smooth the gradients and apply a depth-dependent damping.
     """
+    grad_csv, grad_csh, grad_rho, grad_cp = \
+        read_smooth_and_precondition_gradient(
+            gradient_dir=gradient_dir,
+            smoothing_iterations=smoothing_iterations)
+
+    grad_csv.write(output_directory, 'gradient_x_vsv')
+    grad_csh.write(output_directory, 'gradient_x_vsh')
+    grad_rho.write(output_directory, 'gradient_x_rho')
+    grad_cp.write(output_directory, 'gradient_x_vp')
+
+
+def read_smooth_and_precondition_gradient(gradient_dir, smoothing_iterations):
     from .ses3d_tools.models import SES3DModel
 
     _progress("Reading gradients ...")
@@ -1434,18 +1477,6 @@ def update_model_steepest_descent(config, smoothing_iterations,
     grad_csv.read(gradient_dir, "gradient_csv")
     grad_csh.read(gradient_dir, "gradient_csh")
     grad_rho.read(gradient_dir, "gradient_rho")
-
-    _progress("Reading model ...")
-    # Read model.
-    cp = SES3DModel()
-    csv = SES3DModel()
-    csh = SES3DModel()
-    rho = SES3DModel()
-
-    cp.read(model_dir, "vp")
-    csv.read(model_dir, "vsv")
-    csh.read(model_dir, "vsh")
-    rho.read(model_dir, "rho")
 
     # Smooth
     _progress("Smoothing gradients ...")
@@ -1508,13 +1539,13 @@ def update_model_steepest_descent(config, smoothing_iterations,
     for n in range(grad_csv.nsubvol):
         for k in range(len(grad_csv.m[n].r) - 1):
             grad_csv.m[n].v[:, :, k] = grad_csv.m[n].v[:, :, k] / (
-            damp * max_csv + np.max(np.abs(grad_csv.m[n].v[:, :, k])))
+                damp * max_csv + np.max(np.abs(grad_csv.m[n].v[:, :, k])))
             grad_csh.m[n].v[:, :, k] = grad_csh.m[n].v[:, :, k] / (
-            damp * max_csh + np.max(np.abs(grad_csh.m[n].v[:, :, k])))
+                damp * max_csh + np.max(np.abs(grad_csh.m[n].v[:, :, k])))
             grad_rho.m[n].v[:, :, k] = grad_rho.m[n].v[:, :, k] / (
-            damp * max_rho + np.max(np.abs(grad_rho.m[n].v[:, :, k])))
+                damp * max_rho + np.max(np.abs(grad_rho.m[n].v[:, :, k])))
             grad_cp.m[n].v[:, :, k] = grad_cp.m[n].v[:, :, k] / (
-            damp * max_cp + np.max(np.abs(grad_cp.m[n].v[:, :, k])))
+                damp * max_cp + np.max(np.abs(grad_cp.m[n].v[:, :, k])))
 
 
     grad_csv = scale_csv_total * grad_csv
@@ -1522,8 +1553,43 @@ def update_model_steepest_descent(config, smoothing_iterations,
     grad_rho = scale_rho_total * grad_rho
     grad_cp = scale_cp_total * grad_cp
 
+    return grad_csv, grad_csh, grad_rho, grad_cp
+
+
+@cli.command()
+@click.option("--smoothing-iterations", type=int, required=True,
+              help="Number of nearest neighbour smoothing iterations.")
+@click.argument("gradient_dir", type=click.Path(exists=True, dir_okay=True,
+                                                readable=True))
+@click.argument("model_dir", type=click.Path(exists=True, dir_okay=True,
+                                             readable=True))
+@pass_config
+def update_model_steepest_descent(config, smoothing_iterations,
+                                  gradient_dir, model_dir):
+    """
+    Updates the chosen model with any gradient.
+    """
+    from .ses3d_tools.models import SES3DModel
+
+    _progress("Reading model ...")
+    # Read model.
+    cp = SES3DModel()
+    csv = SES3DModel()
+    csh = SES3DModel()
+    rho = SES3DModel()
+
+    cp.read(model_dir, "vp")
+    csv.read(model_dir, "vsv")
+    csh.read(model_dir, "vsh")
+    rho.read(model_dir, "rho")
+
+    grad_csv, grad_csh, grad_rho, grad_cp = \
+        read_smooth_and_precondition_gradient(
+            gradient_dir=gradient_dir,
+            smoothing_iterations=smoothing_iterations)
+
     # Compute and store updates.
-    gamma = [0.15, 0.5, 1.0, 1.5]
+    gamma = [0.15, 0.25, 0.5, 0.7]
 
     final_model_dir = "TEST_MODELS"
 
@@ -1537,7 +1603,14 @@ def update_model_steepest_descent(config, smoothing_iterations,
         rho_new = rho + -1.0 * gamma[k] * grad_rho
         cp_new = cp + -1.0 * gamma[k] * grad_cp
 
-        csv_new.write(dir_test_model, 'vsv')
-        csh_new.write(dir_test_model, 'vsh')
-        rho_new.write(dir_test_model, 'rho')
-        cp_new.write(dir_test_model, 'vp')
+        csv_new.write(dir_test_model, 'dvsv')
+        csh_new.write(dir_test_model, 'dvsh')
+        rho_new.write(dir_test_model, 'drho')
+        cp_new.write(dir_test_model, 'dvp')
+
+        # These also need the block_ files.
+        blockfiles = ["block_x", "block_y", "block_z"]
+        for filename in blockfiles:
+            src_file = os.path.join(model_dir, filename)
+            dest_file = os.path.join(dir_test_model, filename)
+            shutil.copy2(src_file, dest_file)
