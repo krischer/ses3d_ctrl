@@ -182,21 +182,23 @@ class SES3DModel(object):
 
         return res
 
-    def read(self, directory, filename, verbose=False):
+    def read(self, directory, filename, verbose=False, blockfile_folder=None):
         """ read an ses3d model from a file
 
         read(self,directory,filename,verbose=False):
         """
+        if not blockfile_folder:
+            blockfile_folder = directory
         # read block files
-        fid_x = open(os.path.join(directory, 'block_x'), 'r')
-        fid_y = open(os.path.join(directory, 'block_y'), 'r')
-        fid_z = open(os.path.join(directory, 'block_z'), 'r')
+        fid_x = open(os.path.join(blockfile_folder, 'block_x'), 'r')
+        fid_y = open(os.path.join(blockfile_folder, 'block_y'), 'r')
+        fid_z = open(os.path.join(blockfile_folder, 'block_z'), 'r')
 
         if verbose is True:
             print "read block files:"
-            print "\t%s" % os.path.join(directory, 'block_x')
-            print "\t%s" % os.path.join(directory, 'block_y')
-            print "\t%s" % os.path.join(directory, 'block_z')
+            print "\t%s" % os.path.join(blockfile_folder, 'block_x')
+            print "\t%s" % os.path.join(blockfile_folder, 'block_y')
+            print "\t%s" % os.path.join(blockfile_folder, 'block_z')
 
         dx = np.array(fid_x.read().strip().split('\n'), dtype=float)
         dy = np.array(fid_y.read().strip().split('\n'), dtype=float)
@@ -267,7 +269,8 @@ class SES3DModel(object):
         if verbose is True:
             print 'read model file: %s' % os.path.join(directory, filename)
 
-        v = np.array(fid_m.read().strip().split('\n'), dtype=float)
+        v = np.ma.masked_invalid(
+            np.array(fid_m.read().strip().split('\n'), dtype=float))
 
         fid_m.close()
 
@@ -824,7 +827,7 @@ class SES3DModel(object):
 
     def plot_slice(self, depth, min_val_plot=None, max_val_plot=None,
                    colormap='tomo', res='i', save_under=None, verbose=False,
-                   lasif_folder=None):
+                   lasif_folder=None, vmin=None, vmax=None):
         """
         plot horizontal slices through an ses3d model
 
@@ -839,41 +842,51 @@ class SES3DModel(object):
 
         """
         import matplotlib.pylab as plt
+
+        if lasif_folder:
+            from lasif.scripts.lasif_cli import _find_project_comm
+
+            comm = _find_project_comm(lasif_folder, read_only_caches=True)
+
         from mpl_toolkits.basemap import Basemap
 
         radius = 6371.0 - depth
 
+        plt.figure(figsize=(15, 15))
+
         # set up a map and colourmap
+        if lasif_folder:
+            m = comm.project.domain.plot()
 
-        if self.global_regional == 'regional':
-            m = Basemap(projection='merc', llcrnrlat=self.lat_min,
-                        urcrnrlat=self.lat_max, llcrnrlon=self.lon_min,
-                        urcrnrlon=self.lon_max, lat_ts=20, resolution=res)
-            m.drawparallels(
-                np.arange(self.lat_min, self.lat_max, self.d_lon),
-                labels=[1, 0, 0, 1])
-            m.drawmeridians(
-                np.arange(self.lon_min, self.lon_max, self.d_lat),
-                labels=[1, 0, 0, 1])
-        elif self.global_regional == 'global':
-            m = Basemap(projection='ortho', lon_0=self.lon_centre,
-                        lat_0=self.lat_centre, resolution=res)
-            m.drawparallels(np.arange(-80.0, 80.0, 10.0), labels=[1, 0, 0, 1])
-            m.drawmeridians(
-                np.arange(-170.0, 170.0, 10.0), labels=[1, 0, 0, 1])
+        else:
+            if self.global_regional == 'regional':
+                m = Basemap(projection='merc', llcrnrlat=self.lat_min,
+                            urcrnrlat=self.lat_max, llcrnrlon=self.lon_min,
+                            urcrnrlon=self.lon_max, lat_ts=20, resolution=res)
+                m.drawparallels(
+                    np.arange(self.lat_min, self.lat_max, self.d_lon),
+                    labels=[1, 0, 0, 1])
+                m.drawmeridians(
+                    np.arange(self.lon_min, self.lon_max, self.d_lat),
+                    labels=[1, 0, 0, 1])
+            elif self.global_regional == 'global':
+                m = Basemap(projection='ortho', lon_0=self.lon_centre,
+                            lat_0=self.lat_centre, resolution=res)
+                m.drawparallels(np.arange(-80.0, 80.0, 10.0),
+                                labels=[1, 0, 0, 1])
+                m.drawmeridians(
+                    np.arange(-170.0, 170.0, 10.0),
+                    labels=[1, 0, 0, 1])
 
-        m.drawcoastlines(linewidth=3.0)
-        m.drawcountries()
+            m.drawcoastlines(linewidth=3.0)
+            m.drawcountries()
 
-        m.drawmapboundary(fill_color=[1.0, 1.0, 1.0])
+            m.drawmapboundary(fill_color=[1.0, 1.0, 1.0])
 
         if colormap == 'tomo':
-            my_colormap = cm.make_colormap(
-                {0.0: [0.1, 0.0, 0.0], 0.2: [0.8, 0.0, 0.0],
-                 0.3: [1.0, 0.7, 0.0], 0.48: [0.92, 0.92, 0.92],
-                 0.5: [0.92, 0.92, 0.92], 0.52: [0.92, 0.92, 0.92],
-                 0.7: [0.0, 0.6, 0.7], 0.8: [0.0, 0.0, 0.8],
-                 1.0: [0.0, 0.0, 0.1]})
+            import lasif.colors
+            my_colormap = lasif.colors.get_colormap(
+                "tomo_full_scale_linear_lightness")
         elif colormap == 'mono':
             my_colormap = cm.make_colormap({
                 0.0: [1.0, 1.0, 1.0],
@@ -887,11 +900,6 @@ class SES3DModel(object):
         y_list = []
         idz_list = []
         N_list = []
-
-        if lasif_folder:
-            from lasif.scripts.lasif_cli import _find_project_comm
-
-            comm = _find_project_comm(lasif_folder, read_only_caches=True)
 
         for k in np.arange(self.nsubvol):
 
@@ -976,12 +984,23 @@ class SES3DModel(object):
                     max_val_plot = maxval
                     min_val_plot = minval
 
-        # loop over subvolumes to plot
+        # Plotting essentially constant models.
+        min_delta = 0.01 * abs(max_val_plot)
+        if (max_val_plot - min_val_plot) < min_delta:
+            max_val_plot = max_val_plot + min_delta
+            min_val_plot = min_val_plot - min_delta
 
+        # Overwrite colormap things if given.
+        if vmin is not None and vmax is not None:
+            min_val_plot = vmin
+            max_val_plot = vmax
+
+        # loop over subvolumes to plot
         for k in np.arange(len(N_list)):
             im = m.pcolormesh(
                 x_list[k], y_list[k], self.m[N_list[k]].v[:, :, idz_list[k]],
-                cmap=my_colormap, vmin=min_val_plot, vmax=max_val_plot)
+                cmap=my_colormap, vmin=min_val_plot, vmax=max_val_plot,
+                shading="gouraud")
 
             # if colormap=='mono':
             # cs=m.contour(x_list[k],y_list[k],self.m[N_list[k]].v[:,:,
@@ -996,7 +1015,7 @@ class SES3DModel(object):
         if save_under is None:
             plt.show()
         else:
-            plt.savefig(save_under + '.png', format='png', dpi=200)
+            plt.savefig(save_under, dpi=100)
             plt.close()
 
     def plot_threshold(self, val, min_val_plot, max_val_plot, colormap='tomo',

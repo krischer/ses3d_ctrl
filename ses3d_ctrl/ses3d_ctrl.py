@@ -211,6 +211,140 @@ def _progress(msg, warn=False):
         fg = "green"
     click.echo(click.style(msg, fg=fg))
 
+
+@cli.command()
+@click.option("--output-folder", required=True,
+              type=click.Path(exists=False, dir_okay=True, writable=True),
+              help="Output folder.")
+@click.argument("model-path", type=click.Path(exists=True, readable=True))
+@pass_config
+def model_to_regular_grid(config, output_folder, model_path):
+    boxfile = os.path.join(model_path, "boxfile")
+
+    dims = utils.read_boxfile(boxfile)
+
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Write the blockfiles, if they don't exist yet.
+    blockfile_folder = os.path.join(output_folder, "MODELS", "MODELS_3D")
+    blockfiles_exist = True
+    if not os.path.exists(blockfile_folder):
+        blockfiles_exist = False
+        os.makedirs(blockfile_folder)
+
+    if blockfiles_exist:
+        blockfiles = [os.path.join(blockfile_folder, _i) for _i in [
+            "block_x", "block_y", "block_z"]]
+        for blockfile in blockfiles:
+            if not os.path.exists(blockfile):
+                blockfiles_exist = False
+                break
+
+    if blockfiles_exist:
+        _progress("Blockfiles already exist...")
+    else:
+        _progress("Creating block files ...")
+
+        buf = 0.02
+        # Currently each element will be projected to 5 points per dimension.
+        utils.write_ses3d_blockfiles(
+            output_folder=blockfile_folder,
+            x_min=dims["x_min"] - buf * dims["x_range"],
+            x_max=dims["x_max"] + buf * dims["x_range"],
+            x_count=dims["element_count_x"] * 5,
+            y_min=dims["y_min"] - buf * dims["y_range"],
+            y_max=dims["y_max"] + buf * dims["y_range"],
+            y_count=dims["element_count_y"] * 5,
+            # blockfiles are in km whereas boxfiles are in m...
+            z_min=dims["z_min"] / 1000.0 - buf * dims["z_range"] / 1000.0,
+            z_max=dims["z_max"] / 1000.0 + buf * dims["z_range"] / 1000.0,
+            z_count=dims["element_count_z"] * 5,
+        )
+
+    # Copy the boxfiles.
+    boxfile_folder = os.path.join(output_folder, "MODELS", "MODELS")
+    boxfile_name = os.path.join(boxfile_folder, "boxfile")
+    if not os.path.exists(boxfile_name):
+        _progress("Copying boxfile ...")
+        if not os.path.exists(boxfile_folder):
+            os.makedirs(boxfile_folder)
+        shutil.copy(boxfile, os.path.join(boxfile_name))
+    else:
+        _progress("Boxfile already exists ...")
+
+    # Compile the source code if necessary.
+    src_and_binary_folder = os.path.join(output_folder, "SRC")
+    if not os.path.exists(src_and_binary_folder):
+        _progress("Extracting and compiling the Fortran code ...")
+        _check_ses3d_md5()
+
+        os.makedirs(src_and_binary_folder)
+
+        filenames = ["ses3d_modules.f90", "project_model.f90"]
+
+        with tarfile.open(SES3D_PATH, "r:gz") as tf:
+            for member in tf.getmembers():
+                name = member.name
+                if "TOOLS/SOURCE" not in name:
+                    continue
+                fname = os.path.basename(name)
+                if fname not in filenames:
+                    continue
+                with open(os.path.join(src_and_binary_folder, fname), "wb") as fh:
+                    fh.write(tf.extractfile(member).read())
+
+        # Patch the project_model.f90 file.
+        fname = os.path.join(src_and_binary_folder, "project_model.f90")
+        with open(fname, "r") as fh:
+            src_code = fh.read()
+        with open(fname, "w") as fh:
+            src_code = src_code.replace(
+                "character(len=60) :: junk, fn, cit",
+                "character(len=512) :: junk, fn, cit")
+            src_code = src_code.replace(
+                "character(len=140) :: fn_model, fn_output",
+                "character(len=512) :: fn_model, fn_output")
+            fh.write(src_code)
+
+        # Also patch the modules file.
+        nx_max = dims["element_count_x"] / dims["processors_in_x"]
+        ny_max = dims["element_count_y"] / dims["processors_in_y"]
+        nz_max = dims["element_count_z"] / dims["processors_in_z"]
+
+        fname = os.path.join(src_and_binary_folder, "ses3d_modules.f90")
+        with open(fname, "r") as fh:
+            src_code = fh.read()
+        with open(fname, "w") as fh:
+            src_code = src_code.replace(
+                "integer, parameter :: nx_max=22",
+                "integer, parameter :: nx_max=%i" % nx_max)
+            src_code = src_code.replace(
+                "integer, parameter :: ny_max=27",
+                "integer, parameter :: ny_max=%i" % ny_max)
+
+            src_code = src_code.replace(
+                "integer, parameter :: nz_max=7",
+                "integer, parameter :: nz_max=%i" % nz_max)
+
+            fh.write(src_code)
+
+        # Compile the project_model executable.
+        source_code_files = ["ses3d_modules.f90", "project_model.f90"]
+        project_model_executable = "project_model"
+        config.site.compile_fortran_files(
+            source_code_files=source_code_files,
+            executable=project_model_executable, cwd=src_and_binary_folder)
+    else:
+        _progress("Fortran code has already been compiled ...")
+        project_model_executable = "project_model"
+
+    project_model_executable = os.path.join(src_and_binary_folder,
+                                            project_model_executable)
+
+    project_model(project_model_executable, model_path, output_folder,
+                  verbose=True)
+
 @cli.command()
 @click.option("--output-folder", required=True,
               type=click.Path(exists=False, dir_okay=True, writable=True),
@@ -298,7 +432,7 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
                     os.path.join(models_3d_path, filename))
 
     # Read the input files.
-    input_files = SES3DInputFiles(input_files)
+    input_files = SES3DInputFiles(input_files, only_setup=True)
 
     # Now its kind of a multistep procedure that is not pretty! Eventually
     # we should just edit the SES3D source code!
@@ -307,7 +441,7 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
     # 3. Copy the Q from the first run to the folder with the second run.
     # 4. Add the perturbations which in this case are just the model.
     input_files.setup["model_type"] = 2
-    input_files.write(input_path, "", "")
+    input_files.write(input_path, "", "", only_setup=True)
 
     # Create DATA dir.
     os.makedirs(os.path.join(output_folder, "DATA", "COORDINATES"))
@@ -327,7 +461,7 @@ def model_to_spectral_element_grid(config, output_folder, input_files,
     input_files.setup["model_type"] = 3
     shutil.rmtree(input_path)
     os.makedirs(input_path)
-    input_files.write(input_path, "", "")
+    input_files.write(input_path, "", "", only_setup=True)
 
     _progress("Run generate_model for the second time ...")
     utils.run_process(
@@ -1174,8 +1308,7 @@ def generate_gradients(config, model, verbose, output_folder, kernels):
         config.site.compile_fortran_files(
             source_code_files=source_code_files,
             executable=project_model_executable, cwd=src_and_binary_folder)
-
-    if not os.path.exists(src_and_binary_folder):
+    else:
         _progress("Fortran code has already been compiled ...")
 
     # Now collect the jobs to be done. As this is fairly expensive it can
@@ -1422,20 +1555,35 @@ def project_kernel(executable, kernel_folder, output_folder,
               help="Number of nearest neighbour smoothing iterations.")
 @click.option("--lasif_project",
               type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option("--vmin", type=float, required=False,
+              help="Minimum value for colormap.")
+@click.option("--vmax", type=float, required=False,
+              help="Maximum value for colormap.")
+@click.option("--filename", type=click.Path(exists=False, file_okay=True,
+                                            writable=True),
+              help="Save to this file if given.")
+@click.option("--blockfile_folder",
+              type=click.Path(exists=True, file_okay=False),
+              help="Folder with the blockfiles.")
 @click.argument("kernel", type=click.Path(exists=True, file_okay=True,
                                           readable=True))
 @click.argument("depth_in_km", type=float)
-def plot_kernel(kernel, depth_in_km, smoothing_iterations, lasif_project):
+def plot_kernel(kernel, depth_in_km, filename, vmax, vmin,
+                smoothing_iterations, lasif_project, blockfile_folder):
     """
     Plots the given kernel without rotations or anything.
     """
     from .ses3d_tools.models import SES3DModel
     m = SES3DModel()
-    m.read(os.path.dirname(kernel), os.path.basename(kernel))
+    m.read(os.path.dirname(kernel), os.path.basename(kernel),
+           blockfile_folder=blockfile_folder)
     if smoothing_iterations:
         m.smooth_horizontal(sigma=smoothing_iterations,
                             filter_type="neighbour")
-    m.plot_slice(depth_in_km, lasif_folder=lasif_project)
+    m.plot_slice(depth_in_km, lasif_folder=lasif_project, vmin=vmin,
+                 vmax=vmax, save_under=filename)
+
+
 
 
 @cli.command()

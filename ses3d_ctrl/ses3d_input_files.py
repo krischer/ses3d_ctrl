@@ -13,13 +13,17 @@ class SES3DInputFiles(object):
     """
     Simple object representing SES3D input files.
     """
-    def __init__(self, folder):
+    def __init__(self, folder, only_setup=False):
         if not os.path.exists(folder):
             raise ValueError("Folder '%s' does not exist." % folder)
 
         self.folder = folder
 
-        files = ["setup", "relax", "stf"]
+        if only_setup is True:
+            files = ["setup"]
+        else:
+            files = ["setup", "relax", "stf"]
+
         files = {_i: os.path.join(folder, _i) for _i in files}
 
         for filename in files.values():
@@ -49,9 +53,17 @@ class SES3DInputFiles(object):
                                 folder,
                                 "\n".join([" * %s" % _i for _i in diff])))
 
-        self.stf = self.parse_stf(files["stf"])
-        self.relaxation_times, self.relaxation_weights = \
-            self.parse_relax(files["relax"])
+        if not only_setup:
+            self.stf = self.parse_stf(files["stf"])
+            self.relaxation_times, self.relaxation_weights = \
+                self.parse_relax(files["relax"])
+
+            # Some very basic checks.
+            if self.max_nt > len(self.stf):
+                raise ValueError(
+                    "The biggest event wants to run for %i timesteps, "
+                    "the STF only has %i timesteps." % (self.max_nt,
+                                                        len(self.stf)))
 
         self.events = \
             {name: {"filename": filename,
@@ -60,12 +72,6 @@ class SES3DInputFiles(object):
                     "contents": self.parse_event_file(filename)}
              for name, filename in events.items()}
 
-        # Some very basic checks.
-        if self.max_nt > len(self.stf):
-            raise ValueError(
-                "The biggest event wants to run for %i timesteps, "
-                "the STF only has %i timesteps." % (self.max_nt,
-                                                    len(self.stf)))
 
     def merge(self, other):
         """
@@ -207,7 +213,7 @@ class SES3DInputFiles(object):
         return np.array(relaxation_times), np.array(weights)
 
     def write(self, output_folder, waveform_output_folder,
-              adjoint_output_folder):
+              adjoint_output_folder, only_setup=False):
         # Assert the folder exists, but that it is empty.
         if not os.path.exists(output_folder):
             raise ValueError("Folder '%s' does not exist" % output_folder)
@@ -215,21 +221,23 @@ class SES3DInputFiles(object):
         if os.listdir(output_folder):
             raise ValueError("Folder '%s' is not empty" % output_folder)
 
-        # Write the stf.
-        output = ["#"] * 4
-        output.extend(["%e" % _i for _i in self.stf])
-        output.append("")
-        with io.open(os.path.join(output_folder, "stf"), "wt") as fh:
-            fh.write(u"\n".join(output))
+        if not only_setup:
+            # Write the stf.
+            output = ["#"] * 4
+            output.extend(["%e" % _i for _i in self.stf])
+            output.append("")
+            with io.open(os.path.join(output_folder, "stf"), "wt") as fh:
+                fh.write(u"\n".join(output))
 
-        # Write the relaxation parameters.
-        with io.open(utils.get_template("relax"), "rt") as fh:
-            with io.open(os.path.join(output_folder, "relax"), "wt") as fh2:
-                fh2.write(fh.read().format(
-                    relaxation_times=u"\n".join(
-                        map(str, self.relaxation_times)),
-                    weights=u"\n".join(map(str, self.relaxation_weights))
-                ))
+            # Write the relaxation parameters.
+            with io.open(utils.get_template("relax"), "rt") as fh:
+                with io.open(os.path.join(output_folder, "relax"), "wt") \
+                        as fh2:
+                    fh2.write(fh.read().format(
+                        relaxation_times=u"\n".join(
+                            map(str, self.relaxation_times)),
+                        weights=u"\n".join(map(str, self.relaxation_weights))
+                    ))
 
         # Write setup.
         setup = copy.deepcopy(self.setup)
