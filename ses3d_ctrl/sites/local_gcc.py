@@ -16,7 +16,7 @@ class LocalGCC(SiteConfig):
 
     @property
     def mpi_compiler_flags(self):
-        return ["-std=c99"]
+        return ["-std=c99", "-lm"]
 
     @property
     def c_compiler(self):
