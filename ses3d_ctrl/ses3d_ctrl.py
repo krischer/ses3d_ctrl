@@ -1584,8 +1584,6 @@ def plot_kernel(kernel, depth_in_km, filename, vmax, vmin,
                  vmax=vmax, save_under=filename)
 
 
-
-
 @cli.command()
 @click.option("--smoothing-iterations", type=int, required=True,
               help="Number of nearest neighbour smoothing iterations.")

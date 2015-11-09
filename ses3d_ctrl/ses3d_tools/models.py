@@ -846,7 +846,7 @@ class SES3DModel(object):
         if lasif_folder:
             from lasif.scripts.lasif_cli import _find_project_comm
 
-            comm = _find_project_comm(lasif_folder, read_only_caches=True)
+            comm = _find_project_comm(lasif_folder, read_only_caches=False)
 
         from mpl_toolkits.basemap import Basemap
 
