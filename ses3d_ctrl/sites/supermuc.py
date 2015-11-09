@@ -113,7 +113,9 @@ class SuperMuc(SiteConfig):
         :param wall_time: The wall time in hours.
         :param email: The email address to send notification to.
         """
-        if cpu_count <= 512:
+        if cpu_count <= 64:
+            job_class = "test"
+        elif cpu_count <= 512:
             job_class = "micro"
         elif cpu_count <= 8192:
             job_class = "general"

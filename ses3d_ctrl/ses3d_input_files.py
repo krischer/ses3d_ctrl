@@ -53,6 +53,14 @@ class SES3DInputFiles(object):
                                 folder,
                                 "\n".join([" * %s" % _i for _i in diff])))
 
+        self.events = \
+            {name: {
+                "filename": filename,
+                "receiver_file": recfiles[name],
+                "receiver_count": self.get_receiver_count(recfiles[name]),
+                "contents": self.parse_event_file(filename)}
+             for name, filename in events.items()}
+
         if not only_setup:
             self.stf = self.parse_stf(files["stf"])
             self.relaxation_times, self.relaxation_weights = \
@@ -65,12 +73,6 @@ class SES3DInputFiles(object):
                     "the STF only has %i timesteps." % (self.max_nt,
                                                         len(self.stf)))
 
-        self.events = \
-            {name: {"filename": filename,
-                    "receiver_file": recfiles[name],
-                    "receiver_count": self.get_receiver_count(recfiles[name]),
-                    "contents": self.parse_event_file(filename)}
-             for name, filename in events.items()}
 
 
     def merge(self, other):
