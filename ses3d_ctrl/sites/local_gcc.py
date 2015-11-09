@@ -128,7 +128,7 @@ class LocalGCC(SiteConfig):
                                    self.executable_path):
             return False
 
-        if status == "running":
+        if status in ["running", "sleeping"]:
             return True
         else:
             raise NotImplementedError("Unknown process status '%s'." % status)
