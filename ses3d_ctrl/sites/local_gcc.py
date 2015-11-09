@@ -124,8 +124,8 @@ class LocalGCC(SiteConfig):
             return False
 
         # Make sure it has the correct working dir.
-        if p.getcwd() != os.path.join(self.working_dir, job_name,
-                                      self.executable_path):
+        if p.cwd() != os.path.join(self.working_dir, job_name,
+                                   self.executable_path):
             return False
 
         if status == "running":
