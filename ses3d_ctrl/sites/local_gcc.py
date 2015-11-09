@@ -120,7 +120,7 @@ class LocalGCC(SiteConfig):
             return False
 
         # Make sure it the correct process.
-        if set([_i.name() for _i in p.get_children()]) != {"ses3d"}:
+        if set([_i.name() for _i in p.children()]) != {"ses3d"}:
             return False
 
         # Make sure it has the correct working dir.
