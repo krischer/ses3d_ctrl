@@ -19,7 +19,7 @@ import click
 import numpy as np
 
 from . import utils
-from .gradients import sum_kernels
+from .gradients import sum_kernels, sum_kernels_spectral_element_grid
 from .sites import available_sites
 from .sites.site_config import Status
 from .ses3d_input_files import SES3DInputFiles
@@ -1151,6 +1151,23 @@ def unpack_waveforms(config, iteration_name, lasif_project, archives):
                     _progress("\tUnpacked %i files ..." % count)
 
     _progress("Extracted %i files." % total_count)
+
+
+@cli.command()
+@click.option("--output_folder", type=click.Path(dir_okay=True),
+              required=True, help="The output folder")
+@click.argument("kernels", type=click.Path(exists=True, dir_okay=True),
+                nargs=-1)
+@pass_config
+def sum_spectral_element_grid_gradients(config, output_folder,
+                                        kernels):
+    """
+    Sums all gradients on the spectral element grid.
+    """
+    sum_kernels_spectral_element_grid(
+        kernel_dirs=kernels, output_dir=output_folder,
+        clip_percentile=99.9)
+
 
 @cli.command()
 @click.option("--model", type=str, required=True,
