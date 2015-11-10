@@ -556,6 +556,9 @@ def run_forward(config, model, input_files_folders, lpd, fw_lpd, pml_count,
         raise ValueError("The total number of events must be a multiple of "
                          "the number of parallel events.")
 
+    # Set adjoint flag to 1, meaning an adjoint forward simulation
+    input_files.setup["adjoint_flag"] = 1
+
     # Now we now the total number of events, let's calculate the total wall
     # time and the number of CPUs required.
     s = input_files.setup
