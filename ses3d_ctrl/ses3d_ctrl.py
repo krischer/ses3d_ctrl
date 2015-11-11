@@ -1498,6 +1498,121 @@ def project_model(executable, model_path, output_folder, verbose=False):
     _progress("Projected model.")
 
 
+@cli.command()
+@click.option("--boxfile", type=click.Path(exists=True, file_okay=True,
+                                           readable=True),
+              required=True, help="Path to a boxfile for the gradient.")
+@click.option("--blockfile_folder",
+              type=click.Path(exists=True, dir_okay=True, file_okay=False,
+                              readable=True),
+              required=True, help="Folder containing the blockfiles.")
+@click.option('--verbose', is_flag=True, show_default=True,
+              help="Controls the verbosity of the output")
+@click.option("--output_folder", type=click.Path(), required=True,
+              help="The output folder")
+@click.argument("gradient", type=click.Path(exists=True, dir_okay=True))
+@pass_config
+def project_gradient(config, boxfile, blockfile_folder, verbose,
+                     output_folder, gradient):
+    """
+    Project a single gradient.
+    """
+    dims = utils.read_boxfile(boxfile)
+
+    # Compile the source code if necessary.
+    src_and_binary_folder = os.path.join(output_folder, "SRC")
+
+    # Create a couple of folders and copy some files...
+    models_3d_dir = os.path.join(output_folder, "MODELS", "MODELS_3D")
+    models_dir = os.path.join(output_folder, "MODELS", "MODELS")
+
+    if not os.path.exists(models_3d_dir):
+        os.makedirs(models_3d_dir)
+
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir)
+
+    shutil.copy2(boxfile, os.path.join(models_dir, "boxfile"))
+
+    for block in "block_x", "block_y", "block_z":
+        src = os.path.join(blockfile_folder, block)
+        target = os.path.join(models_3d_dir, block)
+        shutil.copy2(src, target)
+
+    project_kernel_executable = "project_kernel"
+    if not os.path.exists(src_and_binary_folder):
+        _progress("Extracting and compiling the Fortran code ...")
+        _check_ses3d_md5()
+
+        os.makedirs(src_and_binary_folder)
+
+        filenames = ["ses3d_modules.f90", "project_kernel.f90"]
+
+        with tarfile.open(SES3D_PATH, "r:gz") as tf:
+            for member in tf.getmembers():
+                name = member.name
+                if "TOOLS/SOURCE" not in name:
+                    continue
+                fname = os.path.basename(name)
+                if fname not in filenames:
+                    continue
+                with open(os.path.join(src_and_binary_folder, fname), "wb") as fh:
+                    fh.write(tf.extractfile(member).read())
+
+        # Now read the project_kernel.f90 file and patch the character limit.
+        # XXX: Fix this if SES3D updates eventually.
+        fname = os.path.join(src_and_binary_folder, "project_kernel.f90")
+        with open(fname, "r") as fh:
+            src_code = fh.read()
+        with open(fname, "w") as fh:
+            src_code = src_code.replace(
+                "character(len=140) :: fn_grad, fn_output",
+                "character(len=512) :: fn_grad, fn_output")
+            src_code = src_code.replace(
+                "character(len=60) :: junk, fn",
+                "character(len=512) :: junk, fn")
+            fh.write(src_code)
+
+        # Also patch the modules file.
+        nx_max = dims["element_count_x"] / dims["processors_in_x"]
+        ny_max = dims["element_count_y"] / dims["processors_in_y"]
+        nz_max = dims["element_count_z"] / dims["processors_in_z"]
+
+        fname = os.path.join(src_and_binary_folder, "ses3d_modules.f90")
+        with open(fname, "r") as fh:
+            src_code = fh.read()
+        with open(fname, "w") as fh:
+            src_code = src_code.replace(
+                "integer, parameter :: nx_max=22",
+                "integer, parameter :: nx_max=%i" % nx_max)
+            src_code = src_code.replace(
+                "integer, parameter :: ny_max=27",
+                "integer, parameter :: ny_max=%i" % ny_max)
+
+            src_code = src_code.replace(
+                "integer, parameter :: nz_max=7",
+                "integer, parameter :: nz_max=%i" % nz_max)
+
+            fh.write(src_code)
+
+        # Compile the project_kernels executable.
+        source_code_files = ["ses3d_modules.f90", "project_kernel.f90"]
+        config.site.compile_fortran_files(
+            source_code_files=source_code_files,
+            executable=project_kernel_executable, cwd=src_and_binary_folder)
+    else:
+        _progress("Fortran code has already been compiled ...")
+
+    project_kernel_executable = os.path.join(
+        src_and_binary_folder, project_kernel_executable)
+
+    project_kernel(executable=project_kernel_executable,
+                   kernel_folder=gradient,
+                   output_folder=output_folder,
+                   blockfile_folder=blockfile_folder,
+                   verbose=verbose)
+
+
 def project_kernel(executable, kernel_folder, output_folder,
                    blockfile_folder, verbose=False):
     """
