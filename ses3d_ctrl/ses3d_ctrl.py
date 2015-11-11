@@ -1728,11 +1728,14 @@ def plot_kernel(kernel, depth_in_km, filename, vmax, vmin,
 @click.argument("gradient_dir", type=click.Path(exists=True, dir_okay=True,
                                                 readable=True))
 @pass_config
-def smooth_and_precondition_gradients(config, smoothing_iterations,
-                                      gradient_dir, output_directory):
+def smooth_and_precondition_gradient(config, smoothing_iterations,
+                                     gradient_dir, output_directory):
     """
     Smooth the gradients and apply a depth-dependent damping.
     """
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+
     grad_csv, grad_csh, grad_rho, grad_cp = \
         read_smooth_and_precondition_gradient(
             gradient_dir=gradient_dir,
