@@ -24,7 +24,7 @@ class LocalGCC(SiteConfig):
 
     @property
     def c_compiler_flags(self):
-        return []
+        return ["-std=c99", "-lm"]
 
     @property
     def fortran_compiler(self):
