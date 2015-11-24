@@ -1,322 +1,91 @@
 """
-Modiefied copy from the SES3D tools.
+Modified copy from the SES3D tools.
+
+This version only deals with models that have a single domain and utilizes
+the xray package.
 """
 from __future__ import absolute_import
 
 import os
 
 import numpy as np
+import xray
 
 from .import colormaps as cm
 from .import rotation as rot
 from . import Q_models as q
 
 
-class SES3DSubModel(object):
-    """
-    class defining an ses3d submodel
-    """
-    def __init__(self):
-
-        # coordinate lines
-        self.lat = np.zeros(1)
-        self.lon = np.zeros(1)
-        self.r = np.zeros(1)
-
-        # rotated coordinate lines
-        self.lat_rot = np.zeros(1)
-        self.lon_rot = np.zeros(1)
-
-        # field
-        self.v = np.zeros((1, 1, 1))
-
-
 class SES3DModel(object):
     """
     class for reading, writing, plotting and manipulating and ses3d model
     """
-    def __init__(self):
-        """
-        initiate the SES3DModel class
-
-        initiate list of submodels and read rotation_parameters.txt
-        """
-        self.nsubvol = 0
-        self.lat_min = 0.0
-        self.lat_max = 0.0
-        self.lon_min = 0.0
-        self.lon_max = 0.0
-        self.lat_centre = 0.0
-        self.lon_centre = 0.0
-        self.global_regional = "global"
-
-        self.m = []
-
-        # read rotation parameters
-        # Currently disabled as not needed for ses3d_ctrl.
-        # fid = open('rotation_parameters.txt', 'r')
-        # fid.readline()
-        # self.phi = float(fid.readline().strip())
-        # fid.readline()
-        # line = fid.readline().strip().split(' ')
-        # self.n = np.array([float(line[0]), float(line[1]), float(line[2])])
-        # fid.close()
-        self.phi = 0
-        self.n = np.ones(3)
-
-    #########################################################################
-    # copy models
-    #########################################################################
-
     def copy(self):
         """ Copy a model
         """
-
         res = SES3DModel()
-
-        res.nsubvol = self.nsubvol
-
-        res.lat_min = self.lat_min
-        res.lat_max = self.lat_max
-        res.lon_min = self.lon_min
-        res.lon_max = self.lon_max
-        res.lat_centre = self.lat_centre
-        res.lon_centre = self.lon_centre
-        res.phi = self.phi
-
-        res.n = self.n
-
-        res.global_regional = self.global_regional
-        res.d_lon = self.d_lon
-        res.d_lat = self.d_lat
-
-        for k in np.arange(self.nsubvol):
-
-            subvol = SES3DSubModel()
-
-            subvol.lat = self.m[k].lat
-            subvol.lon = self.m[k].lon
-            subvol.r = self.m[k].r
-
-            subvol.lat_rot = self.m[k].lat_rot
-            subvol.lon_rot = self.m[k].lon_rot
-
-            subvol.v = self.m[k].v
-
-            res.m.append(subvol)
-
+        res.data = self.data.copy()
+        res._filename = self._filename
         return res
 
     def __rmul__(self, factor):
         """ override left-multiplication of an ses3d model by a scalar factor
         """
-
-        res = SES3DModel()
-
-        res.nsubvol = self.nsubvol
-
-        res.lat_min = self.lat_min
-        res.lat_max = self.lat_max
-        res.lon_min = self.lon_min
-        res.lon_max = self.lon_max
-        res.lat_centre = self.lat_centre
-        res.lon_centre = self.lon_centre
-        res.phi = self.phi
-
-        res.n = self.n
-
-        res.global_regional = self.global_regional
-        res.d_lon = self.d_lon
-        res.d_lat = self.d_lat
-
-        for k in np.arange(self.nsubvol):
-
-            subvol = SES3DSubModel()
-
-            subvol.lat = self.m[k].lat
-            subvol.lon = self.m[k].lon
-            subvol.r = self.m[k].r
-
-            subvol.lat_rot = self.m[k].lat_rot
-            subvol.lon_rot = self.m[k].lon_rot
-
-            subvol.v = factor * self.m[k].v
-
-            res.m.append(subvol)
-
+        res = self.copy()
+        res.data *= factor
         return res
 
     def __add__(self, other_model):
         """
         override addition of two ses3d models
         """
-        res = SES3DModel()
-
-        res.nsubvol = self.nsubvol
-        res.lat_min = self.lat_min
-        res.lat_max = self.lat_max
-        res.lon_min = self.lon_min
-        res.lon_max = self.lon_max
-        res.lat_centre = self.lat_centre
-        res.lon_centre = self.lon_centre
-        res.phi = self.phi
-        res.n = self.n
-        res.global_regional = self.global_regional
-        res.d_lon = self.d_lon
-        res.d_lat = self.d_lat
-
-        for k in np.arange(self.nsubvol):
-
-            subvol = SES3DSubModel()
-
-            subvol.lat = self.m[k].lat
-            subvol.lon = self.m[k].lon
-            subvol.r = self.m[k].r
-
-            subvol.lat_rot = self.m[k].lat_rot
-            subvol.lon_rot = self.m[k].lon_rot
-
-            subvol.v = self.m[k].v + other_model.m[k].v
-
-            res.m.append(subvol)
-
+        res = self.copy()
+        res.data += self.data
         return res
 
     def read(self, directory, filename, verbose=False, blockfile_folder=None):
-        """ read an ses3d model from a file
-
-        read(self,directory,filename,verbose=False):
+        """
+        Read a SES3D Model.
         """
         if not blockfile_folder:
             blockfile_folder = directory
-        # read block files
-        fid_x = open(os.path.join(blockfile_folder, 'block_x'), 'r')
-        fid_y = open(os.path.join(blockfile_folder, 'block_y'), 'r')
-        fid_z = open(os.path.join(blockfile_folder, 'block_z'), 'r')
 
-        if verbose is True:
-            print "read block files:"
-            print "\t%s" % os.path.join(blockfile_folder, 'block_x')
-            print "\t%s" % os.path.join(blockfile_folder, 'block_y')
-            print "\t%s" % os.path.join(blockfile_folder, 'block_z')
+        self._filename = os.path.abspath(os.path.join(directory, filename))
 
-        dx = np.array(fid_x.read().strip().split('\n'), dtype=float)
-        dy = np.array(fid_y.read().strip().split('\n'), dtype=float)
-        dz = np.array(fid_z.read().strip().split('\n'), dtype=float)
+        # Read blockfiles.
+        blocks = {}
+        for var, f_name in zip(["x", "y", "z"],
+                               ["block_x", "block_y", "block_z"]):
+            blocks[var] = np.loadtxt(os.path.join(blockfile_folder, f_name),
+                           dtype=np.float32)
+            assert blocks[var][0] == 1, "Only one subvolume allowed."
 
-        fid_x.close()
-        fid_y.close()
-        fid_z.close()
+            # Also make sure it contains exactly as many coordinates as
+            # expected.
+            assert len(blocks[var][2:]) == blocks[var][1]
+            blocks[var] = blocks[var][2:]
 
-        # read coordinate lines
+            # Also the latest values is never used! This is consitent with
+            # the add_perturbations function and all the projection functions
+            # in SES3D.
+            blocks[var] = blocks[var][:-1]
 
-        self.nsubvol = int(dx[0])
+        radius = blocks["z"]
+        longitude = blocks["y"]
+        latitude = 90.0 - blocks["x"]
 
-        if verbose is True:
-            print 'number of subvolumes: ' + str(self.nsubvol)
+        with open(os.path.join(directory, filename)) as fh:
+            # Seems to be about the fastest way to read possibly NaN ASCII
+            # floating point values.
+            data = np.array(fh.read().strip().split('\n'),
+                            dtype=np.float32)[2:]
+            data = np.reshape(data, (len(latitude), len(longitude),
+                                     len(radius)))
 
-        idx = np.zeros(self.nsubvol, dtype=int) + 1
-        idy = np.zeros(self.nsubvol, dtype=int) + 1
-        idz = np.zeros(self.nsubvol, dtype=int) + 1
-
-        for k in np.arange(1, self.nsubvol, dtype=int):
-            idx[k] = int(dx[idx[k - 1]]) + idx[k - 1] + 1
-            idy[k] = int(dy[idy[k - 1]]) + idy[k - 1] + 1
-            idz[k] = int(dz[idz[k - 1]]) + idz[k - 1] + 1
-
-        for k in np.arange(self.nsubvol, dtype=int):
-            subvol = SES3DSubModel()
-            subvol.lat = 90.0 - dx[(idx[k] + 1):(idx[k] + 1 + dx[idx[k]])]
-            subvol.lon = dy[(idy[k] + 1):(idy[k] + 1 + dy[idy[k]])]
-            subvol.r = dz[(idz[k] + 1):(idz[k] + 1 + dz[idz[k]])]
-            self.m.append(subvol)
-
-        # compute rotated version of the coordinate lines
-
-        if self.phi != 0.0:
-
-            for k in np.arange(self.nsubvol, dtype=int):
-
-                nx = len(self.m[k].lat)
-                ny = len(self.m[k].lon)
-
-                self.m[k].lat_rot = np.zeros([nx, ny])
-                self.m[k].lon_rot = np.zeros([nx, ny])
-
-                for idx in np.arange(nx):
-                    for idy in np.arange(ny):
-                        self.m[k].lat_rot[idx, idy], \
-                            self.m[k].lon_rot[idx, idy] = \
-                            rot.rotate_coordinates(self.n, -self.phi,
-                                                   90.0 - self.m[k].lat[idx],
-                                                   self.m[k].lon[idy])
-                        self.m[k].lat_rot[idx, idy] = 90.0 - \
-                            self.m[k].lat_rot[idx, idy]
-
-        else:
-
-            for k in np.arange(self.nsubvol, dtype=int):
-
-                self.m[k].lat_rot, self.m[k].lon_rot = np.meshgrid(
-                    self.m[k].lat, self.m[k].lon)
-                self.m[k].lat_rot = self.m[k].lat_rot.T
-                self.m[k].lon_rot = self.m[k].lon_rot.T
-
-        # read model volume
-
-        fid_m = open(os.path.join(directory, filename), 'r')
-
-        if verbose is True:
-            print 'read model file: %s' % os.path.join(directory, filename)
-
-        v = np.ma.masked_invalid(
-            np.array(fid_m.read().strip().split('\n'), dtype=float))
-
-        fid_m.close()
-
-        # assign values
-
-        idx = 1
-        for k in np.arange(self.nsubvol):
-
-            n = int(v[idx])
-            nx = len(self.m[k].lat) - 1
-            ny = len(self.m[k].lon) - 1
-            nz = len(self.m[k].r) - 1
-
-            self.m[k].v = v[(idx + 1):(idx + 1 + n)].reshape(nx, ny, nz)
-
-            idx = idx + n + 1
-
-        # decide on global or regional model
-
-        self.lat_min = 90.0
-        self.lat_max = -90.0
-        self.lon_min = 180.0
-        self.lon_max = -180.0
-
-        for k in np.arange(self.nsubvol):
-            if np.min(self.m[k].lat_rot) < self.lat_min:
-                self.lat_min = np.min(self.m[k].lat_rot)
-            if np.max(self.m[k].lat_rot) > self.lat_max:
-                self.lat_max = np.max(self.m[k].lat_rot)
-            if np.min(self.m[k].lon_rot) < self.lon_min:
-                self.lon_min = np.min(self.m[k].lon_rot)
-            if np.max(self.m[k].lon_rot) > self.lon_max:
-                self.lon_max = np.max(self.m[k].lon_rot)
-
-        if ((self.lat_max - self.lat_min) > 90.0 or
-                (self.lon_max - self.lon_min) > 90.0):
-            self.global_regional = "global"
-
-            self.lat_centre = (self.lat_max + self.lat_min) / 2.0
-            self.lon_centre = (self.lon_max + self.lon_min) / 2.0
-
-        else:
-            self.global_regional = "regional"
-
-        self.d_lat = 5.0
-        self.d_lon = 5.0
+        # Convert to xray data array.
+        self.data = xray.DataArray(data, [("latitude", latitude),
+                                          ("longitude", longitude),
+                                          ("radius", radius)])
 
     def write(self, directory, filename, verbose=False):
         """
@@ -325,9 +94,6 @@ class SES3DModel(object):
         write(self,directory,filename,verbose=False):
         """
         fid_m = open(os.path.join(directory, filename), 'w')
-
-        if verbose is True:
-            print 'write to file %s' % os.path.join(directory, filename)
 
         fid_m.write(str(self.nsubvol) + '\n')
 
@@ -841,181 +607,172 @@ class SES3DModel(object):
         Prevents plotting of the slice.
 
         """
+        import matplotlib.cm
+        from matplotlib.colors import LogNorm
         import matplotlib.pylab as plt
 
-        if lasif_folder:
-            from lasif.scripts.lasif_cli import _find_project_comm
+        plt.style.use('seaborn-pastel')
 
-            comm = _find_project_comm(lasif_folder, read_only_caches=False)
 
-        from mpl_toolkits.basemap import Basemap
+        if not lasif_folder:
+            raise NotImplementedError
 
-        radius = 6371.0 - depth
+        from lasif.scripts.lasif_cli import _find_project_comm
+        comm = _find_project_comm(lasif_folder, read_only_caches=False)
 
-        plt.figure(figsize=(15, 15))
+        plt.figure(figsize=(32, 18))
 
-        # set up a map and colourmap
-        if lasif_folder:
-            m = comm.project.domain.plot()
+        depth_position_map = {
+            50: (0, 0),
+            100: (0, 1),
+            150: (1, 0),
+            250: (1, 1),
+            400: (2, 0),
+            600: (2, 1)
+        }
 
-        else:
-            if self.global_regional == 'regional':
-                m = Basemap(projection='merc', llcrnrlat=self.lat_min,
-                            urcrnrlat=self.lat_max, llcrnrlon=self.lon_min,
-                            urcrnrlon=self.lon_max, lat_ts=20, resolution=res)
-                m.drawparallels(
-                    np.arange(self.lat_min, self.lat_max, self.d_lon),
-                    labels=[1, 0, 0, 1])
-                m.drawmeridians(
-                    np.arange(self.lon_min, self.lon_max, self.d_lat),
-                    labels=[1, 0, 0, 1])
-            elif self.global_regional == 'global':
-                m = Basemap(projection='ortho', lon_0=self.lon_centre,
-                            lat_0=self.lat_centre, resolution=res)
-                m.drawparallels(np.arange(-80.0, 80.0, 10.0),
-                                labels=[1, 0, 0, 1])
-                m.drawmeridians(
-                    np.arange(-170.0, 170.0, 10.0),
-                    labels=[1, 0, 0, 1])
+        for depth, location in depth_position_map.items():
+            ax = plt.subplot2grid((3, 5), location)
+            radius = 6371.0 - depth
 
-            m.drawcoastlines(linewidth=3.0)
-            m.drawcountries()
+            # set up a map and colourmap
+            m = comm.project.domain.plot(ax=ax)
 
-            m.drawmapboundary(fill_color=[1.0, 1.0, 1.0])
-
-        if colormap == 'tomo':
             import lasif.colors
             my_colormap = lasif.colors.get_colormap(
                 "tomo_full_scale_linear_lightness")
-        elif colormap == 'mono':
-            my_colormap = cm.make_colormap({
-                0.0: [1.0, 1.0, 1.0],
-                0.15: [1.0, 1.0, 1.0],
-                0.85: [0.0, 0.0, 0.0],
-                1.0: [0.0, 0.0, 0.0]})
 
-        # loop over subvolumes to collect information
+            from lasif import rotations
 
-        x_list = []
-        y_list = []
-        idz_list = []
-        N_list = []
+            x, y = np.meshgrid(self.data.longitude, self.data.latitude)
 
-        for k in np.arange(self.nsubvol):
+            x_shape = x.shape
+            y_shape = y.shape
 
-            nx = len(self.m[k].lat)
-            ny = len(self.m[k].lon)
+            lat_r, lon_r = rotations.rotate_lat_lon(
+                y.ravel(), x.ravel(),
+                comm.project.domain.rotation_axis,
+                comm.project.domain.rotation_angle_in_degree)
 
-            r = self.m[k].r
+            x, y = m(lon_r, lat_r)
 
-            # collect subvolumes within target depth
+            x.shape = x_shape
+            y.shape = y_shape
 
-            if (max(r) >= radius) and (min(r) < radius):
+            plot_data = self.data.sel(radius=radius, method="nearest")
+            plot_data = np.ma.masked_invalid(plot_data.data)
 
-                N_list.append(k)
+            # Overwrite colormap things if given.
+            if vmin is not None and vmax is not None:
+                min_val_plot = vmin
+                max_val_plot = vmax
+            else:
+                mean = plot_data.mean()
+                max_diff = max(abs(mean - plot_data.min()),
+                               abs(plot_data.max() - mean))
+                min_val_plot = mean - max_diff
+                max_val_plot = mean + max_diff
+                # Plotting essentially constant models.
+                min_delta = 0.01 * abs(max_val_plot)
+                if (max_val_plot - min_val_plot) < min_delta:
+                    max_val_plot = max_val_plot + min_delta
+                    min_val_plot = min_val_plot - min_delta
 
-                r = r[0:len(r) - 1]
-                idz = min(
-                    np.where(min(np.abs(r - radius)) == np.abs(r - radius))[0])
-                if idz == len(r):
-                    idz -= idz
-                idz_list.append(idz)
-
-                if verbose is True:
-                    print 'true plotting depth: ' + str(6371.0 - r[idz]) + \
-                        ' km'
-
-                if lasif_folder:
-                    from lasif import rotations
-                    lon = self.m[k].lon_rot[0:nx - 1, 0:ny - 1]
-                    lat = self.m[k].lat_rot[0:nx - 1, 0:ny - 1]
-
-                    lat_r, lon_r = rotations.rotate_lat_lon(
-                        lat.ravel(), lon.ravel(),
-                        comm.project.domain.rotation_axis,
-                        comm.project.domain.rotation_angle_in_degree)
-
-                    lat_r.shape = lat.shape
-                    lon_r.shape = lon.shape
-
-                    x, y = m(lon_r, lat_r)
-
-                else:
-                    x, y = m(self.m[k].lon_rot[0:nx - 1, 0:ny - 1],
-                             self.m[k].lat_rot[0:nx - 1, 0:ny - 1])
-                x_list.append(x)
-                y_list.append(y)
-
-        # make a (hopefully) intelligent colour scale
-
-        if min_val_plot is None:
-
-            if len(N_list) > 0:
-
-                # compute some diagnostics
-
-                min_list = []
-                max_list = []
-                percentile_list = []
-
-                for k in np.arange(len(N_list)):
-
-                    min_list.append(
-                        np.min(self.m[N_list[k]].v[:, :, idz_list[k]]))
-                    max_list.append(
-                        np.max(self.m[N_list[k]].v[:, :, idz_list[k]]))
-                    percentile_list.append(
-                        np.percentile(np.abs(
-                            self.m[N_list[k]].v[:, :, idz_list[k]]), 99.0))
-
-                minval = np.min(min_list)
-                maxval = np.max(max_list)
-                percent = np.max(percentile_list)
-
-                # min and max roughly centred around zero
-
-                if (minval * maxval < 0.0):
-                    max_val_plot = percent
-                    min_val_plot = -max_val_plot
-
-                # min and max not centred around zero
-
-                else:
-                    max_val_plot = maxval
-                    min_val_plot = minval
-
-        # Plotting essentially constant models.
-        min_delta = 0.01 * abs(max_val_plot)
-        if (max_val_plot - min_val_plot) < min_delta:
-            max_val_plot = max_val_plot + min_delta
-            min_val_plot = min_val_plot - min_delta
-
-        # Overwrite colormap things if given.
-        if vmin is not None and vmax is not None:
-            min_val_plot = vmin
-            max_val_plot = vmax
-
-        # loop over subvolumes to plot
-        for k in np.arange(len(N_list)):
+            # Plot.
             im = m.pcolormesh(
-                x_list[k], y_list[k], self.m[N_list[k]].v[:, :, idz_list[k]],
+                x, y, plot_data,
                 cmap=my_colormap, vmin=min_val_plot, vmax=max_val_plot,
                 shading="gouraud")
 
-            # if colormap=='mono':
-            # cs=m.contour(x_list[k],y_list[k],self.m[N_list[k]].v[:,:,
-            # idz_list[k]], colors='r',linewidths=1.0)
-            # plt.clabel(cs,colors='r')
+            # make a colorbar and title
+            m.colorbar(im, "right", size="3%", pad='2%')
+            plt.title(str(depth) + ' km')
 
-        # make a colorbar and title
-        m.colorbar(im, "right", size="3%", pad='2%')
-        plt.title(str(depth) + ' km')
+
+        # Depth based statistics.
+        plt.subplot2grid((3, 5), (0, 4), rowspan=3)
+        plt.title("Depth statistics")
+        mean = self.data.mean(axis=(0, 1))
+        std = self.data.std(axis=(0, 1))
+        _min = self.data.min(axis=(0, 1))
+        _max = self.data.max(axis=(0, 1))
+
+        plt.fill_betweenx(self.data.radius, mean - std, mean + std,
+                          label="std", color="#FF3C83")
+        plt.plot(mean, self.data.radius, label="mean", color="k", lw=2)
+        plt.plot(_min, self.data.radius, color="grey", label="min")
+        plt.plot(_max, self.data.radius, color="grey", label="max")
+        plt.legend(loc="best")
+        plt.xlabel("Value")
+        plt.ylabel("Radius")
+
+        # Roughness plots.
+        plt.subplot2grid((3, 5), (0, 2))
+        data = np.abs(self.data.diff("latitude", n=1)).sum("latitude").data
+        plt.title("Roughness in latitude direction, Total: %g" % data.sum())
+        plt.pcolormesh(self.data.longitude.data, self.data.radius.data,
+                       data.T, cmap=matplotlib.cm.viridis,
+                       norm=LogNorm(data.max() * 1E-2, data.max()))
+        plt.colorbar()
+        plt.xlabel("Longitude")
+        plt.ylabel("Radius")
+
+        plt.subplot2grid((3, 5), (1, 2))
+        data = np.abs(self.data.diff("longitude", n=1)).sum("longitude").data
+        plt.title("Roughness in longitude direction. Total: %g" % data.sum())
+        plt.pcolormesh(self.data.latitude.data, self.data.radius.data, data.T,
+                       cmap=matplotlib.cm.viridis,
+                       norm=LogNorm(data.max() * 1E-2, data.max()))
+        plt.colorbar()
+        plt.xlabel("Latitude")
+        plt.ylabel("Radius")
+
+        plt.subplot2grid((3, 5), (2, 2))
+        data = np.abs(self.data.diff("radius", n=1)).sum("radius").data
+        plt.title("Roughness in radius direction. Total: %g" % data.sum())
+        plt.pcolormesh(self.data.longitude.data, self.data.latitude.data,
+                       data, cmap=matplotlib.cm.viridis)
+        plt.colorbar()
+        plt.xlabel("Longitude")
+        plt.ylabel("Latitude")
+
+        # L2
+        plt.subplot2grid((3, 5), (0, 3))
+        data = (self.data ** 2).sum("latitude").data
+        plt.title("L2 Norm in latitude direction, Total: %g" % data.sum())
+        plt.pcolormesh(self.data.longitude.data, self.data.radius.data,
+                       data.T, cmap=matplotlib.cm.viridis)
+        plt.colorbar()
+        plt.xlabel("Longitude")
+        plt.ylabel("Radius")
+
+        plt.subplot2grid((3, 5), (1, 3))
+        data = (self.data ** 2).sum("longitude").data
+        plt.title("L2 Norm in longitude direction, Total: %g" % data.sum())
+        plt.pcolormesh(self.data.latitude.data, self.data.radius.data, data.T,
+                       cmap=matplotlib.cm.viridis)
+        plt.colorbar()
+        plt.xlabel("Latitude")
+        plt.ylabel("Radius")
+
+        plt.subplot2grid((3, 5), (2, 3))
+        data = (self.data ** 2).sum("radius").data
+        plt.title("L2 Norm in radius direction, Total: %g" % data.sum())
+        plt.pcolormesh(self.data.longitude.data, self.data.latitude.data,
+                       data, cmap=matplotlib.cm.viridis)
+        plt.colorbar()
+        plt.xlabel("Longitude")
+        plt.ylabel("Latitude")
+
+        plt.suptitle("File %s" % self._filename, fontsize=20)
+
+        plt.tight_layout(rect=(0, 0, 1, 0.95))
 
         # save image if wanted
         if save_under is None:
             plt.show()
         else:
-            plt.savefig(save_under, dpi=100)
+            plt.savefig(save_under, dpi=150)
             plt.close()
 
     def plot_threshold(self, val, min_val_plot, max_val_plot, colormap='tomo',

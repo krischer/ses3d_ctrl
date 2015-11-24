@@ -1797,9 +1797,9 @@ def read_smooth_and_precondition_gradient(gradient_dir, smoothing_iterations):
           "\tc_sh: %.4f\n"
           "\tc_p: %.4f\n"
           "\trho: %.4f" % (scale_csv_total, scale_csh_total,
-                           scale_rho_total, scale_cp_total))
+                           scale_cp_total, scale_rho_total))
 
-    print(scale_csv_total, scale_csh_total, scale_rho_total, scale_cp_total)
+    print(scale_csv_total, scale_csh_total, scale_cp_total, scale_rho_total)
 
     # Depth scaling
     _progress("Apply depth dependent damping ...")
