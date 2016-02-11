@@ -1939,3 +1939,16 @@ def hdf5_model_to_binary(config, input_filename, output_directory):
     from .hdf5_model import hdf5_model_to_binary_ses3d_model
     hdf5_model_to_binary_ses3d_model(
         input_filename=input_filename, output_folder=output_directory)
+
+
+@cli.command()
+@click.argument("filename", type=click.Path(
+                exists=True, dir_okay=False, file_okay=True, readable=True))
+@click.argument("component", type=str)
+@click.argument("output_filename", type=click.Path(
+        exists=False, dir_okay=False, file_okay=True, writable=True))
+@pass_config
+def plot_hdf5(config, filename, component, output_filename):
+    from .hdf5_model import plot_hdf5_model
+    plot_hdf5_model(filename=filename, component=component,
+                    output_filename=output_filename)

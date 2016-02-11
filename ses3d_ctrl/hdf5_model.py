@@ -50,7 +50,11 @@ def binary_ses3d_to_hdf5_model(input_folder, lasif_project, output_filename):
 
         # We will also store A, C, and Q which we don't invert for but have to
         # take into account in any case.
-        components = ["vp", "vsh", "vsv", "rho", "A", "C", "Q"]
+        components = ["vp", "vsh", "vsv", "rho", "A", "C"]
+        # Q might not exist.
+        if "Q" in m.components:
+            components.append("Q")
+
         for c in components:
             m.parse_component(c)
             _d = xray.DataArray(
@@ -148,7 +152,9 @@ def _hdf5_model_to_binary_ses3d_model(f, output_folder):
     data["A"] = (f["data"]["A"][:])
     data["B"] = (f["data"]["vsv"][:] * 1000) ** 2 / data["rhoinv"] - data["mu"]
     data["C"] = (f["data"]["C"][:])
-    data["Q"] = (f["data"]["Q"][:])
+    # Q might now always be given.
+    if "Q" in f["data"]:
+        data["Q"] = (f["data"]["Q"][:])
 
     for key in sorted(data.keys()):
         for number, domain in enumerate(setup["subdomains"]):
@@ -302,3 +308,195 @@ def _read_boxfile(fh):
                  setup["subdomains"]]))
 
     return setup
+
+
+def plot_hdf5_model(filename, *args, **kwargs):
+    with h5py.File(filename, "r") as f:
+        _plot_hdf5_model(f=f, *args, **kwargs)
+
+
+def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
+    import matplotlib.cm
+    from matplotlib.colors import LogNorm
+    import matplotlib.pylab as plt
+
+    data = xray.DataArray(
+        f["data"][component][:], [
+            ("latitude", 90.0 - f["coordinate_0"][:]),
+            ("longitude", f["coordinate_1"][:]),
+            ("radius", (6371000.0 - f["coordinate_2"][:]) / 1000.0)])
+
+    plt.style.use('seaborn-pastel')
+
+    from lasif.domain import RectangularSphericalSection
+    domain = RectangularSphericalSection(**dict(f["_meta"]["domain"].attrs))
+
+    plt.figure(figsize=(32, 18))
+
+    depth_position_map = {
+        50: (0, 0),
+        100: (0, 1),
+        150: (1, 0),
+        250: (1, 1),
+        400: (2, 0),
+        600: (2, 1)
+    }
+
+    for depth, location in depth_position_map.items():
+        ax = plt.subplot2grid((3, 5), location)
+        radius = 6371.0 - depth
+
+        # set up a map and colourmap
+        m = domain.plot(ax=ax, resolution="c")
+
+        import lasif.colors
+        my_colormap = lasif.colors.get_colormap(
+                "tomo_full_scale_linear_lightness")
+
+        from lasif import rotations
+
+        x, y = np.meshgrid(data.longitude, data.latitude)
+
+        x_shape = x.shape
+        y_shape = y.shape
+
+        lat_r, lon_r = rotations.rotate_lat_lon(
+                y.ravel(), x.ravel(),
+                domain.rotation_axis,
+                domain.rotation_angle_in_degree)
+
+        x, y = m(lon_r, lat_r)
+
+        x.shape = x_shape
+        y.shape = y_shape
+
+        plot_data = data.sel(radius=radius, method="nearest")
+        plot_data = np.ma.masked_invalid(plot_data.data)
+
+        # Overwrite colormap things if given.
+        if vmin is not None and vmax is not None:
+            min_val_plot = vmin
+            max_val_plot = vmax
+        else:
+            mean = plot_data.mean()
+            max_diff = max(abs(mean - plot_data.min()),
+                           abs(plot_data.max() - mean))
+            min_val_plot = mean - max_diff
+            max_val_plot = mean + max_diff
+            # Plotting essentially constant models.
+            min_delta = 0.01 * abs(max_val_plot)
+            if (max_val_plot - min_val_plot) < min_delta:
+                max_val_plot = max_val_plot + min_delta
+                min_val_plot = min_val_plot - min_delta
+
+        # Plot.
+        im = m.pcolormesh(
+                x, y, plot_data,
+                cmap=my_colormap, vmin=min_val_plot, vmax=max_val_plot,
+                shading="gouraud")
+
+        # make a colorbar and title
+        m.colorbar(im, "right", size="3%", pad='2%')
+        plt.title(str(depth) + ' km')
+
+
+    # Depth based statistics.
+    plt.subplot2grid((3, 5), (0, 4), rowspan=3)
+    plt.title("Depth statistics")
+    mean = data.mean(axis=(0, 1))
+    std = data.std(axis=(0, 1))
+    _min = data.min(axis=(0, 1))
+    _max = data.max(axis=(0, 1))
+
+    plt.fill_betweenx(data.radius, mean - std, mean + std,
+                      label="std", color="#FF3C83")
+    plt.plot(mean, data.radius, label="mean", color="k", lw=2)
+    plt.plot(_min, data.radius, color="grey", label="min")
+    plt.plot(_max, data.radius, color="grey", label="max")
+    plt.legend(loc="best")
+    plt.xlabel("Value")
+    plt.ylabel("Radius")
+
+    # Roughness plots.
+    plt.subplot2grid((3, 5), (0, 2))
+    _d = np.abs(data.diff("latitude", n=1)).sum("latitude").data
+    plt.title("Roughness in latitude direction, Total: %g" % _d.sum())
+    plt.pcolormesh(data.longitude.data, data.radius.data,
+                   _d.T, cmap=matplotlib.cm.viridis,
+                   norm=LogNorm(data.max() * 1E-2, data.max()))
+    try:
+        plt.colorbar()
+    except:
+        pass
+    plt.xlabel("Longitude")
+    plt.ylabel("Radius")
+
+    plt.subplot2grid((3, 5), (1, 2))
+    _d = np.abs(data.diff("longitude", n=1)).sum("longitude").data
+    plt.title("Roughness in longitude direction. Total: %g" % data.sum())
+    plt.pcolormesh(data.latitude.data, data.radius.data, _d.T,
+                   cmap=matplotlib.cm.viridis,
+                   norm=LogNorm(data.max() * 1E-2, data.max()))
+    try:
+        plt.colorbar()
+    except:
+        pass
+    plt.xlabel("Latitude")
+    plt.ylabel("Radius")
+
+    plt.subplot2grid((3, 5), (2, 2))
+    _d = np.abs(data.diff("radius", n=1)).sum("radius").data
+    plt.title("Roughness in radius direction. Total: %g" % _d.sum())
+    plt.pcolormesh(data.longitude.data, data.latitude.data,
+                   _d, cmap=matplotlib.cm.viridis)
+    try:
+        plt.colorbar()
+    except:
+        pass
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+
+    # L2
+    plt.subplot2grid((3, 5), (0, 3))
+    _d = (data ** 2).sum("latitude").data
+    plt.title("L2 Norm in latitude direction, Total: %g" % _d.sum())
+    plt.pcolormesh(data.longitude.data, data.radius.data,
+                   _d.T, cmap=matplotlib.cm.viridis)
+    try:
+        plt.colorbar()
+    except:
+        pass
+    plt.xlabel("Longitude")
+    plt.ylabel("Radius")
+
+    plt.subplot2grid((3, 5), (1, 3))
+    _d = (data ** 2).sum("longitude").data
+    plt.title("L2 Norm in longitude direction, Total: %g" % _d.sum())
+    plt.pcolormesh(data.latitude.data, data.radius.data, _d.T,
+                   cmap=matplotlib.cm.viridis)
+    try:
+        plt.colorbar()
+    except:
+        pass
+    plt.xlabel("Latitude")
+    plt.ylabel("Radius")
+
+    plt.subplot2grid((3, 5), (2, 3))
+    _d = (data ** 2).sum("radius").data
+    plt.title("L2 Norm in radius direction, Total: %g" % _d.sum())
+    plt.pcolormesh(data.longitude.data, data.latitude.data,
+                   _d, cmap=matplotlib.cm.viridis)
+    try:
+        plt.colorbar()
+    except:
+        pass
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+
+    plt.suptitle("File %s" % output_filename, fontsize=20)
+
+    plt.tight_layout(rect=(0, 0, 1, 0.95))
+
+    plt.savefig(output_filename, dpi=150)
+    plt.close()
+
