@@ -144,7 +144,7 @@ def _hdf5_model_to_binary_ses3d_model(f, output_folder):
     data["rhoinv"] = 1.0 / f["data"]["rho"][:]
     data["mu"] = (f["data"]["vsh"][:] * 1000) ** 2 / data["rhoinv"]
     data["lambda"] = \
-        (f["data"]["vp"][:] * 1000) ** 2 / data["rhoinv"] - data["mu"]
+        (f["data"]["vp"][:] * 1000) ** 2 / data["rhoinv"] - 2 * data["mu"]
     data["A"] = (f["data"]["A"][:])
     data["B"] = (f["data"]["vsv"][:] * 1000) ** 2 / data["rhoinv"] - data["mu"]
     data["C"] = (f["data"]["C"][:])
