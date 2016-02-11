@@ -9,7 +9,10 @@ setup(
         "six",
         "arrow",
         "psutil",
-        "enum34"
+        "enum34",
+        "numpy",
+        "h5py",
+        "xray"
     ],
     entry_points="""
         [console_scripts]

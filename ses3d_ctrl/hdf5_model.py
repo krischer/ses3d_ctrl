@@ -24,6 +24,10 @@ def binary_ses3d_to_hdf5_model(input_folder, lasif_project, output_filename):
 
     Requires access to a LASIF project that determines the potentially
     rotated geometry. Not super clean but workable.
+
+    :param input_folder: The folder containing the input model.
+    :param lasif_project: The folder with the LASIF project.
+    :param output_filename: The output filename.
     """
     assert not os.path.exists(output_filename), \
         "'%s' already exists" % output_filename
