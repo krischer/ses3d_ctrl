@@ -28,8 +28,9 @@ class SES3DModel(object):
         res._filename = self._filename
         return res
 
-    def __rmul__(self, factor):
-        """ override left-multiplication of an ses3d model by a scalar factor
+    def __mul__(self, factor):
+        """
+        override left-multiplication of an ses3d model by a scalar factor
         """
         res = self.copy()
         res.data *= factor
@@ -93,25 +94,18 @@ class SES3DModel(object):
 
         write(self,directory,filename,verbose=False):
         """
-        fid_m = open(os.path.join(directory, filename), 'w')
+        with open(os.path.join(directory, filename), 'w') as fh:
+            fh.write("1\n")
 
-        fid_m.write(str(self.nsubvol) + '\n')
+            nx = self.data.latitude.shape[0]
+            ny = self.data.longitude.shape[0]
+            nz = self.data.radius.shape[0]
+            fh.write(str(nx * ny * nz) + '\n')
 
-        for k in np.arange(self.nsubvol):
-
-            nx = len(self.m[k].lat) - 1
-            ny = len(self.m[k].lon) - 1
-            nz = len(self.m[k].r) - 1
-
-            fid_m.write(str(nx * ny * nz) + '\n')
-
-            for idx in np.arange(nx):
-                for idy in np.arange(ny):
-                    for idz in np.arange(nz):
-
-                        fid_m.write(str(self.m[k].v[idx, idy, idz]) + '\n')
-
-        fid_m.close()
+            for idx in xrange(nx):
+                for idy in xrange(ny):
+                    for idz in xrange(nz):
+                        fh.write(str(self.data.data[idx, idy, idz]) + '\n')
 
     def norm(self):
         """
@@ -184,6 +178,42 @@ class SES3DModel(object):
         algorithmic complexity and with fast compute times, awaits
         resolution ... .
         """
+        # Smoothing by averaging over neighbouring cells.
+        from scipy.ndimage.filters import gaussian_filter
+
+        width_latitude = 120
+        width_longitude = 120
+        width_radius = 30
+
+        # Convert the width in samples.
+        sigma = (
+            width_latitude / 111.0 / abs(np.diff(self.data.latitude.data)[0]),
+            width_longitude / 111.0 / abs(np.diff(
+                self.data.longitude.data)[0]),
+            width_radius / abs(np.diff(self.data.radius.data)[0]))
+
+        self.data.data = gaussian_filter(self.data.data, sigma=sigma,
+                                         mode="nearest")
+        return
+
+        if filter_type == 'neighbour':
+
+            for _ in range(int(sigma)):
+                filtered_data = self.data.copy()
+                for i in np.arange(1, self.data.latitude.shape[0] - 1):
+                    for j in np.arange(1, self.data.longitude.shape[0] - 1):
+                        filtered_data.data[i, j, :] = (
+                          self.data.data[i, j, :] +
+                          self.data.data[i + 1, j, :] +
+                          self.data.data[i - 1, j, :] +
+                          self.data.data[i, j + 1, :] +
+                          self.data.data[i, j - 1, :]) / 5.0
+                self.data = filtered_data
+        else:
+            raise NotImplementedError
+
+        return
+
         # Loop over subvolumes.
         for n in np.arange(self.nsubvol):
 
@@ -605,7 +635,6 @@ class SES3DModel(object):
         res=resolution of the map, admissible values are: c, l, i, h f
         save_under=save figure as *.png with the filename "save_under".
         Prevents plotting of the slice.
-
         """
         import matplotlib.cm
         from matplotlib.colors import LogNorm

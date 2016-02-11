@@ -1741,6 +1741,8 @@ def smooth_and_precondition_gradient(config, smoothing_iterations,
             gradient_dir=gradient_dir,
             smoothing_iterations=smoothing_iterations)
 
+    _progress("Writing kernels ...")
+
     grad_csv.write(output_directory, 'gradient_x_vsv')
     grad_csh.write(output_directory, 'gradient_x_vsh')
     grad_rho.write(output_directory, 'gradient_x_rho')
@@ -1762,6 +1764,33 @@ def read_smooth_and_precondition_gradient(gradient_dir, smoothing_iterations):
     grad_csh.read(gradient_dir, "gradient_csh")
     grad_rho.read(gradient_dir, "gradient_rho")
 
+    _progress("Tapering the bottom ...")
+    # Taper with a gaussian from 20 % to 10 %!
+    ptp = grad_cp.data.radius.data.ptp()
+
+    min_radius = grad_cp.data.radius.data.min()
+    lower_threshold = min_radius + 0.1 * ptp
+    upper_threshold = min_radius + 0.2 * ptp
+    threshold_width = upper_threshold - lower_threshold
+
+    def get_taper(v):
+        if v <= lower_threshold:
+            return 0.0
+        elif v >= upper_threshold:
+            return 1.0
+        position = (v - lower_threshold) / threshold_width
+
+        # Hanning window.
+        return 0.5 - 0.5 * np.cos(np.pi * position)
+
+    taper = [get_taper(_i) for _i in grad_cp.data.radius.data]
+
+    for _i in xrange(grad_csv.data.radius.shape[0]):
+        grad_csv.data.data[:, :, _i]  *= taper[_i]
+        grad_csh.data.data[:, :, _i]  *= taper[_i]
+        grad_cp.data.data[:, :, _i]  *= taper[_i]
+        grad_rho.data.data[:, :, _i]  *= taper[_i]
+
     # Smooth
     _progress("Smoothing gradients ...")
     grad_cp.smooth_horizontal(sigma=smoothing_iterations,
@@ -1774,16 +1803,10 @@ def read_smooth_and_precondition_gradient(gradient_dir, smoothing_iterations):
                                filter_type="neighbour")
 
     # Relative importance of the kernels
-    sum_csv = 0.0
-    sum_csh = 0.0
-    sum_rho = 0.0
-    sum_cp = 0.0
-
-    for n in range(grad_csv.nsubvol):
-        sum_csv = sum_csv + np.sum(np.abs(grad_csv.m[n].v))
-        sum_csh = sum_csh + np.sum(np.abs(grad_csh.m[n].v))
-        sum_rho = sum_rho + np.sum(np.abs(grad_rho.m[n].v))
-        sum_cp = sum_cp + np.sum(np.abs(grad_cp.m[n].v))
+    sum_csv = np.abs(grad_csv.data.data).sum()
+    sum_csh = np.abs(grad_csh.data.data).sum()
+    sum_rho = np.abs(grad_rho.data.data).sum()
+    sum_cp = np.abs(grad_cp.data.data).sum()
 
     max_sum = max([sum_csv, sum_csh, sum_cp, sum_rho])
 
@@ -1799,43 +1822,32 @@ def read_smooth_and_precondition_gradient(gradient_dir, smoothing_iterations):
           "\trho: %.4f" % (scale_csv_total, scale_csh_total,
                            scale_cp_total, scale_rho_total))
 
-    print(scale_csv_total, scale_csh_total, scale_cp_total, scale_rho_total)
-
     # Depth scaling
     _progress("Apply depth dependent damping ...")
-    max_csv = []
-    max_csh = []
-    max_rho = []
-    max_cp = []
 
-    for n in range(grad_csv.nsubvol):
-        max_csv.append(np.max(np.abs(grad_csv.m[n].v[:, :, :])))
-        max_csh.append(np.max(np.abs(grad_csh.m[n].v[:, :, :])))
-        max_rho.append(np.max(np.abs(grad_rho.m[n].v[:, :, :])))
-        max_cp.append(np.max(np.abs(grad_cp.m[n].v[:, :, :])))
+    max_csv = np.abs(grad_csv.data).max()
+    max_csh = np.abs(grad_csh.data).max()
+    max_rho = np.abs(grad_rho.data).max()
+    max_cp = np.abs(grad_rho.data).max()
 
-    max_csv = max(max_csv)
-    max_csh = max(max_csh)
-    max_rho = max(max_rho)
-    max_cp = max(max_cp)
     damp = 0.3
 
-    for n in range(grad_csv.nsubvol):
-        for k in range(len(grad_csv.m[n].r) - 1):
-            grad_csv.m[n].v[:, :, k] = grad_csv.m[n].v[:, :, k] / (
-                damp * max_csv + np.max(np.abs(grad_csv.m[n].v[:, :, k])))
-            grad_csh.m[n].v[:, :, k] = grad_csh.m[n].v[:, :, k] / (
-                damp * max_csh + np.max(np.abs(grad_csh.m[n].v[:, :, k])))
-            grad_rho.m[n].v[:, :, k] = grad_rho.m[n].v[:, :, k] / (
-                damp * max_rho + np.max(np.abs(grad_rho.m[n].v[:, :, k])))
-            grad_cp.m[n].v[:, :, k] = grad_cp.m[n].v[:, :, k] / (
-                damp * max_cp + np.max(np.abs(grad_cp.m[n].v[:, :, k])))
+    for k in xrange(grad_csv.data.radius.shape[0]):
 
+        grad_csv.data.data[:, :, k] /= (
+            damp * max_csv + np.abs(grad_csv.data.data[:, :, k]).max())
 
-    grad_csv = scale_csv_total * grad_csv
-    grad_csh = scale_csh_total * grad_csh
-    grad_rho = scale_rho_total * grad_rho
-    grad_cp = scale_cp_total * grad_cp
+        grad_csh.data.data[:, :, k] /= (
+            damp * max_csh + np.abs(grad_csh.data.data[:, :, k]).max())
+        grad_cp.data.data[:, :, k] /= (
+            damp * max_cp + np.abs(grad_cp.data.data[:, :, k]).max())
+        grad_rho.data.data[:, :, k] /= (
+            damp * max_rho + np.abs(grad_rho.data.data[:, :, k]).max())
+
+    grad_csv = grad_csv * scale_csv_total
+    grad_csh = grad_csh * scale_csh_total
+    grad_rho = grad_rho * scale_rho_total
+    grad_cp = grad_cp * scale_cp_total
 
     return grad_csv, grad_csh, grad_rho, grad_cp
 
@@ -1898,3 +1910,32 @@ def update_model_steepest_descent(config, smoothing_iterations,
             src_file = os.path.join(model_dir, filename)
             dest_file = os.path.join(dir_test_model, filename)
             shutil.copy2(src_file, dest_file)
+
+
+@cli.command()
+@click.argument("lasif_project", type=click.Path(exists=True, dir_okay=True,
+                                                readable=True))
+@click.argument("model_dir", type=click.Path(exists=True, dir_okay=True,
+                                             readable=True))
+@click.argument("output_filename", type=click.Path(exists=False,
+                                                   dir_okay=False,
+                                                   file_okay=True,
+                                                   writable=True))
+@pass_config
+def binary_model_to_hdf5(config, lasif_project, model_dir, output_filename):
+    from .hdf5_model import binary_ses3d_to_hdf5_model
+    binary_ses3d_to_hdf5_model(input_folder=model_dir,
+                               lasif_project=lasif_project,
+                               output_filename=output_filename)
+
+
+@cli.command()
+@click.argument("input_filename", type=click.Path(
+    exists=True, dir_okay=False, file_okay=True, readable=True))
+@click.argument("output_directory", type=click.Path(
+    exists=False, dir_okay=True, file_okay=False, writable=True))
+@pass_config
+def hdf5_model_to_binary(config, input_filename, output_directory):
+    from .hdf5_model import hdf5_model_to_binary_ses3d_model
+    hdf5_model_to_binary_ses3d_model(
+        input_filename=input_filename, output_folder=output_directory)
