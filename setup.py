@@ -12,7 +12,7 @@ setup(
         "enum34",
         "numpy",
         "h5py",
-        "xray"
+        "xarray"
     ],
     entry_points="""
         [console_scripts]

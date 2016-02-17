@@ -9,7 +9,7 @@ import struct
 
 import h5py
 import numpy as np
-import xray
+import xarray
 
 # LASIF can already deal with the binary SES3D models. Thus we can utilize
 # this here!
@@ -57,7 +57,7 @@ def binary_ses3d_to_hdf5_model(input_folder, lasif_project, output_filename):
 
         for c in components:
             m.parse_component(c)
-            _d = xray.DataArray(
+            _d = xarray.DataArray(
                 np.require(m.parsed_components[c],
                            requirements=["C_CONTIGUOUS"]),
                 coords=[90.0 - m.collocation_points_lats[::-1],
@@ -320,7 +320,7 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     from matplotlib.colors import LogNorm
     import matplotlib.pylab as plt
 
-    data = xray.DataArray(
+    data = xarray.DataArray(
         f["data"][component][:], [
             ("latitude", 90.0 - f["coordinate_0"][:]),
             ("longitude", f["coordinate_1"][:]),
@@ -493,10 +493,10 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     plt.xlabel("Longitude")
     plt.ylabel("Latitude")
 
-    plt.suptitle("File %s" % output_filename, fontsize=20)
+    plt.suptitle("Component %s - File %s" % (component, output_filename),
+                 fontsize=20)
 
     plt.tight_layout(rect=(0, 0, 1, 0.95))
 
     plt.savefig(output_filename, dpi=150)
     plt.close()
-
