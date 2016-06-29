@@ -413,6 +413,7 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     plt.plot(mean, data.radius, label="mean", color="k", lw=2)
     plt.plot(_min, data.radius, color="grey", label="min")
     plt.plot(_max, data.radius, color="grey", label="max")
+    plt.gca().invert_yaxis()
     plt.legend(loc="best")
     plt.xlabel("Value")
     plt.ylabel("Radius")
