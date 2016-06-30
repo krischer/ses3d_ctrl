@@ -39,21 +39,31 @@ def binary_ses3d_to_hdf5_model(input_folder, lasif_project, output_filename):
     # rotation settings.
     comm = _find_project_comm(lasif_project, read_only_caches=True)
 
+    if any(_i.startswith("grad_") for _i in os.listdir(input_folder)):
+        model_type = "kernel"
+    else:
+        model_type = "earth_model"
+
     m = RawSES3DModelHandler(
         directory=input_folder, domain=comm.project.domain,
-        model_type="earth_model")
+        model_type=model_type)
 
     f = h5py.File(output_filename)
 
     try:
         data_group = f.create_group("data")
 
-        # We will also store A, C, and Q which we don't invert for but have to
-        # take into account in any case.
-        components = ["vp", "vsh", "vsv", "rho", "A", "C"]
-        # Q might not exist.
-        if "Q" in m.components:
-            components.append("Q")
+        if model_type == "earth_model":
+            # We will also store A, C, and Q which we don't invert for but
+            # have to take into account in any case.
+            components = ["vp", "vsh", "vsv", "rho", "A", "C"]
+            # Q might not exist.
+            if "Q" in m.components:
+                components.append("Q")
+        elif model_type == "kernel":
+            components = ["grad_cp", "grad_csh", "grad_csv", "grad_rho"]
+        else:
+            raise NotImplementedError
 
         for c in components:
             m.parse_component(c)
@@ -324,7 +334,7 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
         f["data"][component][:], [
             ("latitude", 90.0 - f["coordinate_0"][:]),
             ("longitude", f["coordinate_1"][:]),
-            ("radius", (6371000.0 - f["coordinate_2"][:]) / 1000.0)])
+            ("radius", f["coordinate_2"][:] / 1000.0)])
 
     plt.style.use('seaborn-pastel')
 
@@ -413,7 +423,6 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     plt.plot(mean, data.radius, label="mean", color="k", lw=2)
     plt.plot(_min, data.radius, color="grey", label="min")
     plt.plot(_max, data.radius, color="grey", label="max")
-    plt.gca().invert_yaxis()
     plt.legend(loc="best")
     plt.xlabel("Value")
     plt.ylabel("Radius")

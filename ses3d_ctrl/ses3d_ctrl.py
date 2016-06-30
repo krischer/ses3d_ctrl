@@ -1166,7 +1166,7 @@ def sum_spectral_element_grid_gradients(config, output_folder,
     """
     sum_kernels_spectral_element_grid(
         kernel_dirs=kernels, output_dir=output_folder,
-        clip_percentile=99.9)
+        clip_percentile=99.7)
 
 
 @cli.command()
