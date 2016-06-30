@@ -65,6 +65,14 @@ def binary_ses3d_to_hdf5_model(input_folder, lasif_project, output_filename):
         else:
             raise NotImplementedError
 
+        # Make it compatible with seismopt.
+        rename_dict = {
+            "grad_cp": "vp",
+            "grad_csh": "vsh",
+            "grad_csv": "vsv",
+            "grad_rho": "rho",
+        }
+
         for c in components:
             m.parse_component(c)
             _d = xarray.DataArray(
@@ -76,6 +84,8 @@ def binary_ses3d_to_hdf5_model(input_folder, lasif_project, output_filename):
                 dims=["colatitude", "longitude", "radius_in_m"])
 
             # Write to HDF5 file.
+            if c in rename_dict:
+                c = rename_dict[c]
             data_group[c] = np.require(_d.data, dtype=np.float32)
             data_group[c].attrs["variable_name"] = \
                 np.string_((c + "\x00").encode())
@@ -93,6 +103,8 @@ def binary_ses3d_to_hdf5_model(input_folder, lasif_project, output_filename):
 
         # Create dimension scales.
         for c in components:
+            if c in rename_dict:
+                c = rename_dict[c]
             f["data"][c].dims[0].label = "colatitude"
             f["data"][c].dims[1].label = "longitude"
             f["data"][c].dims[2].label = "radius_in_m"
