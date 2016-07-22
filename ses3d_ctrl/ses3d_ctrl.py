@@ -1749,6 +1749,48 @@ def smooth_and_precondition_gradient(config, smoothing_iterations,
     grad_cp.write(output_directory, 'gradient_x_vp')
 
 
+@cli.command()
+@click.argument("input", type=click.Path(exists=True, dir_okay=False,
+                                         file_okay=True, readable=True))
+@click.argument("output", type=click.Path(exists=False, dir_okay=False,
+                                          file_okay=True, writable=True))
+@click.option("--colatitude_offset_in_km", type=float, required=True,
+              help="Everything this close to either border in colatitude "
+                   "direction will be set to 0.")
+@click.option("--colatitude_width_in_km", type=float, required=True,
+              help="Width of the taper in colatitude direction. Begins "
+                   "directly after the offset.")
+@click.option("--longitude_offset_in_km", type=float, required=True,
+              help="Everything this close to either border in longitude "
+                   "direction will be set to 0.")
+@click.option("--longitude_width_in_km", type=float, required=True,
+              help="Width of the taper in longitude direction. Begins "
+                   "directly after the offset.")
+@click.option("--depth_offset_in_km", type=float, required=True,
+              help="Everything this close to bottom edge in depth "
+                   "direction will be set to 0.")
+@click.option("--depth_width_in_km", type=float, required=True,
+              help="Width of the taper in depth direction. Begins "
+                   "directly after the offset. Only applies at the bottom")
+@pass_config
+def taper_gradient(config, input, output,
+                   colatitude_offset_in_km, colatitude_width_in_km,
+                   longitude_offset_in_km, longitude_width_in_km,
+                   depth_offset_in_km, depth_width_in_km):
+    """
+    Tapers a gradient in the hdf5 file.
+    """
+    from .hdf5_model import taper_hdf5_model
+    taper_hdf5_model(
+        input_filename=input, output_filename=output,
+        taper_colatitude_offset_in_km=colatitude_offset_in_km,
+        taper_colatitude_width_in_km=colatitude_width_in_km,
+        taper_longitude_offset_in_km=longitude_offset_in_km,
+        taper_longitude_width_in_km=longitude_width_in_km,
+        taper_depth_offset_in_km=depth_offset_in_km,
+        taper_depth_width_in_km=depth_width_in_km)
+
+
 def read_smooth_and_precondition_gradient(gradient_dir, smoothing_iterations):
     from .ses3d_tools.models import SES3DModel
 

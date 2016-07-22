@@ -5,6 +5,7 @@ from __future__ import absolute_import, print_function
 import io
 import math
 import os
+import shutil
 import struct
 
 import h5py
@@ -339,7 +340,6 @@ def plot_hdf5_model(filename, *args, **kwargs):
 
 def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     import matplotlib.cm
-    from matplotlib.colors import LogNorm
     import matplotlib.pylab as plt
 
     data = xarray.DataArray(
@@ -444,8 +444,7 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     _d = np.abs(data.diff("latitude", n=1)).sum("latitude").data
     plt.title("Roughness in latitude direction, Total: %g" % _d.sum())
     plt.pcolormesh(data.longitude.data, data.radius.data,
-                   _d.T, cmap=matplotlib.cm.viridis,
-                   norm=LogNorm(data.max() * 1E-2, data.max()))
+                   _d.T, cmap=matplotlib.cm.viridis)
     try:
         plt.colorbar()
     except:
@@ -457,8 +456,7 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     _d = np.abs(data.diff("longitude", n=1)).sum("longitude").data
     plt.title("Roughness in longitude direction. Total: %g" % data.sum())
     plt.pcolormesh(data.latitude.data, data.radius.data, _d.T,
-                   cmap=matplotlib.cm.viridis,
-                   norm=LogNorm(data.max() * 1E-2, data.max()))
+                   cmap=matplotlib.cm.viridis)
     try:
         plt.colorbar()
     except:
@@ -522,3 +520,74 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
 
     plt.savefig(output_filename, dpi=150)
     plt.close()
+
+
+def taper_hdf5_model(input_filename, output_filename,
+                     taper_colatitude_offset_in_km,
+                     taper_colatitude_width_in_km,
+                     taper_longitude_offset_in_km,
+                     taper_longitude_width_in_km,
+                     taper_depth_offset_in_km,
+                     taper_depth_width_in_km):
+    # Make a copy of the file and then modify in-place.
+    assert not os.path.exists(output_filename), "File '%s' already exists." % \
+        output_filename
+
+    shutil.copy2(input_filename, output_filename)
+
+    with h5py.File(output_filename, "r+") as f:
+        _taper_hdf5_model(
+            f=f,
+            taper_colatitude_offset_in_km=taper_colatitude_offset_in_km,
+            taper_colatitude_width_in_km=taper_colatitude_width_in_km,
+            taper_longitude_offset_in_km=taper_longitude_offset_in_km,
+            taper_longitude_width_in_km=taper_longitude_width_in_km,
+            taper_depth_offset_in_km=taper_depth_offset_in_km,
+            taper_depth_width_in_km=taper_depth_width_in_km)
+
+
+def _taper_hdf5_model(f, taper_colatitude_offset_in_km,
+                      taper_colatitude_width_in_km,
+                      taper_longitude_offset_in_km,
+                      taper_longitude_width_in_km,
+                      taper_depth_offset_in_km,
+                      taper_depth_width_in_km):
+
+    fac = 111.19492664455873
+    colatitude_in_km = f["coordinate_0"][:] * fac
+    longitude_in_km = f["coordinate_1"][:] * fac
+    radius_in_km = f["coordinate_2"][:] / 1000.0
+
+    # Convert into distance from either end.
+    for _i in [colatitude_in_km, longitude_in_km]:
+        _i[:] = np.fmin(_i - _i.min(), _i.max() - _i)
+    # In the radial direction we only taper at the bottom.
+    radius_in_km -= radius_in_km.min()
+
+    # Apply the offsets
+    colatitude_in_km -= taper_colatitude_offset_in_km
+    longitude_in_km -= taper_longitude_offset_in_km
+    radius_in_km -= taper_depth_offset_in_km
+
+    # Apply the taper width
+    colatitude_in_km /= taper_colatitude_width_in_km
+    longitude_in_km /= taper_longitude_width_in_km
+    radius_in_km /= taper_depth_width_in_km
+
+    # Clip
+    longitude_in_km = longitude_in_km.clip(min=0.0, max=1.0)
+    colatitude_in_km = colatitude_in_km.clip(min=0.0, max=1.0)
+    radius_in_km = radius_in_km.clip(min=0.0, max=1.0)
+
+    # Apply Hanning taper. This finalizes the taper we have to multiply the
+    # data with.
+    for x in [longitude_in_km, colatitude_in_km, radius_in_km]:
+        x[:] = 0.5 * (1.0 - np.cos(x * np.pi))
+
+    # Apply the tapers.
+    for name, data in f["data"].items():
+        data = data[:]
+        data *= colatitude_in_km[:, np.newaxis, np.newaxis]
+        data *= longitude_in_km[np.newaxis, :, np.newaxis]
+        data *= radius_in_km[np.newaxis, np.newaxis, :]
+        f["data"][name][:] = data
