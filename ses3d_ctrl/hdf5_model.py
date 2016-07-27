@@ -524,13 +524,11 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     plt.close()
 
 
-def taper_hdf5_model(input_filename, output_filename,
-                     taper_colatitude_offset_in_km,
-                     taper_colatitude_width_in_km,
-                     taper_longitude_offset_in_km,
-                     taper_longitude_width_in_km,
-                     taper_depth_offset_in_km,
-                     taper_depth_width_in_km):
+def taper_and_precondition_hdf5_model(
+        input_filename, output_filename, taper_colatitude_offset_in_km,
+        taper_colatitude_width_in_km, taper_longitude_offset_in_km,
+        taper_longitude_width_in_km, taper_depth_offset_in_km,
+        taper_depth_width_in_km, scaling_file):
     # Make a copy of the file and then modify in-place.
     assert not os.path.exists(output_filename), "File '%s' already exists." % \
         output_filename
@@ -538,22 +536,31 @@ def taper_hdf5_model(input_filename, output_filename,
     shutil.copy2(input_filename, output_filename)
 
     with h5py.File(output_filename, "r+") as f:
-        _taper_hdf5_model(
+        _taper_and_precondition_hdf5_model(
             f=f,
             taper_colatitude_offset_in_km=taper_colatitude_offset_in_km,
             taper_colatitude_width_in_km=taper_colatitude_width_in_km,
             taper_longitude_offset_in_km=taper_longitude_offset_in_km,
             taper_longitude_width_in_km=taper_longitude_width_in_km,
             taper_depth_offset_in_km=taper_depth_offset_in_km,
-            taper_depth_width_in_km=taper_depth_width_in_km)
+            taper_depth_width_in_km=taper_depth_width_in_km,
+            scaling_file=scaling_file)
 
 
-def _taper_hdf5_model(f, taper_colatitude_offset_in_km,
-                      taper_colatitude_width_in_km,
-                      taper_longitude_offset_in_km,
-                      taper_longitude_width_in_km,
-                      taper_depth_offset_in_km,
-                      taper_depth_width_in_km):
+def _taper_and_precondition_hdf5_model(f, taper_colatitude_offset_in_km,
+                                       taper_colatitude_width_in_km,
+                                       taper_longitude_offset_in_km,
+                                       taper_longitude_width_in_km,
+                                       taper_depth_offset_in_km,
+                                       taper_depth_width_in_km,
+                                       scaling_file):
+
+    # Read the scaling file and make sure it plays nice with the gradient at
+    # hand.
+    with io.open(scaling_file, "rb") as fh:
+        scaling = json.load(fh)
+    np.testing.assert_allclose(scaling["radius"], f["coordinate_2"][:])
+    scaling = np.array(scaling["weights"], dtype=np.float32)
 
     fac = 111.19492664455873
     colatitude_in_km = f["coordinate_0"][:] * fac
@@ -592,6 +599,8 @@ def _taper_hdf5_model(f, taper_colatitude_offset_in_km,
         data *= colatitude_in_km[:, np.newaxis, np.newaxis]
         data *= longitude_in_km[np.newaxis, :, np.newaxis]
         data *= radius_in_km[np.newaxis, np.newaxis, :]
+        # Apply the depth weighting.
+        data *= scaling[np.newaxis, np.newaxis, :]
         f["data"][name][:] = data
 
 
@@ -684,7 +693,7 @@ def _determine_depth_scaling(f, output_filename, max_vsv_change):
     plt.suptitle("Factor: %s" % str(factor))
 
     output = {
-        "depths": [float(i) for i in f["coordinate_2"][:]],
+        "radius": [float(i) for i in f["coordinate_2"][:]],
         "weights": [float(i) for i in smooth_s * factor]
     }
 

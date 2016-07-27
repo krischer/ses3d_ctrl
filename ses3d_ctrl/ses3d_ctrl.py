@@ -1754,6 +1754,8 @@ def smooth_and_precondition_gradient(config, smoothing_iterations,
                                          file_okay=True, readable=True))
 @click.argument("output", type=click.Path(exists=False, dir_okay=False,
                                           file_okay=True, writable=True))
+@click.argument("scaling_file", type=click.Path(exists=True, dir_okay=False,
+                                                file_okay=True, readable=True))
 @click.option("--colatitude_offset_in_km", type=float, required=True,
               help="Everything this close to either border in colatitude "
                    "direction will be set to 0.")
@@ -1773,22 +1775,23 @@ def smooth_and_precondition_gradient(config, smoothing_iterations,
               help="Width of the taper in depth direction. Begins "
                    "directly after the offset. Only applies at the bottom")
 @pass_config
-def taper_gradient(config, input, output,
-                   colatitude_offset_in_km, colatitude_width_in_km,
-                   longitude_offset_in_km, longitude_width_in_km,
-                   depth_offset_in_km, depth_width_in_km):
+def taper_and_precondition_gradient(
+        config, input, output, colatitude_offset_in_km, colatitude_width_in_km,
+        longitude_offset_in_km, longitude_width_in_km,
+        depth_offset_in_km, depth_width_in_km, scaling_file):
     """
     Tapers a gradient in the hdf5 file.
     """
-    from .hdf5_model import taper_hdf5_model
-    taper_hdf5_model(
+    from .hdf5_model import taper_and_precondition_hdf5_model
+    taper_and_precondition_hdf5_model(
         input_filename=input, output_filename=output,
         taper_colatitude_offset_in_km=colatitude_offset_in_km,
         taper_colatitude_width_in_km=colatitude_width_in_km,
         taper_longitude_offset_in_km=longitude_offset_in_km,
         taper_longitude_width_in_km=longitude_width_in_km,
         taper_depth_offset_in_km=depth_offset_in_km,
-        taper_depth_width_in_km=depth_width_in_km)
+        taper_depth_width_in_km=depth_width_in_km,
+        scaling_file=scaling_file)
 
 
 @cli.command()
