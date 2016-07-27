@@ -1791,6 +1791,29 @@ def taper_gradient(config, input, output,
         taper_depth_width_in_km=depth_width_in_km)
 
 
+@cli.command()
+@click.option("--max_vsv_change", type=float, default=0.25,
+              help="All kernels will be scaled by a factor. This factor is "
+                   "calculate by restricting the maximum absolute value of "
+                   "the vsv kernel to this value. Try to choose this so that "
+                   "an initial step length of 1 will results in a misfit "
+                   "reduction.")
+@click.argument("input", type=click.Path(exists=True, dir_okay=False,
+                                         file_okay=True, readable=True))
+@click.argument("output", type=click.Path(exists=False, dir_okay=False,
+                                          file_okay=True, writable=True))
+@pass_config
+def determine_depth_scaling(config, input, output, max_vsv_change):
+    """
+    Determines the depth scaling of the gradients. This must only be done
+    once with each L-BFGS run as things otherwise change.
+    """
+    from .hdf5_model import determine_depth_scaling
+    determine_depth_scaling(input_filename=input,
+                            output_filename=output,
+                            max_vsv_change=max_vsv_change)
+
+
 def read_smooth_and_precondition_gradient(gradient_dir, smoothing_iterations):
     from .ses3d_tools.models import SES3DModel
 

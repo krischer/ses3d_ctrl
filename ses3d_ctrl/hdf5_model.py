@@ -3,6 +3,7 @@
 from __future__ import absolute_import, print_function
 
 import io
+import json
 import math
 import os
 import shutil
@@ -10,6 +11,7 @@ import struct
 
 import h5py
 import numpy as np
+import obspy
 import xarray
 
 # LASIF can already deal with the binary SES3D models. Thus we can utilize
@@ -591,3 +593,102 @@ def _taper_hdf5_model(f, taper_colatitude_offset_in_km,
         data *= longitude_in_km[np.newaxis, :, np.newaxis]
         data *= radius_in_km[np.newaxis, np.newaxis, :]
         f["data"][name][:] = data
+
+
+def determine_depth_scaling(input_filename, output_filename, max_vsv_change):
+    with h5py.File(input_filename, mode="r") as f:
+        _determine_depth_scaling(f=f,
+                                 output_filename=output_filename,
+                                 max_vsv_change=max_vsv_change)
+
+
+def _determine_depth_scaling(f, output_filename, max_vsv_change):
+    all_scales = []
+
+    for data in f["data"].values():
+        data = data[:]
+        # Zeros mess with everything - replace with the smallest
+        # non-zero number!
+        data[data == 0] = np.abs(data[data != 0]).min()
+
+        # Damping factor - the higher the damping the lesser the effect of
+        # the depth scaling.
+        damp = 0.1
+
+        m = np.max(np.abs(data))
+        fac = np.zeros(data.shape[-1])
+        for _i in range(len(fac)):
+            fac[_i] = 1.0 / (damp * m + np.abs(data[:, :, _i]).max())
+
+        all_scales.append(fac)
+
+    s = np.sum(all_scales, axis=0)
+
+    import scipy.signal
+    # Smooth a tiny bit to avoid wild oscillations.
+    w = scipy.signal.gaussian(5, 3)
+    w /= w.sum()
+
+    # Scale this for funsies.
+    s /= s.min()
+
+    # Avoid boundary effects.
+    l = len(s)
+    s = np.concatenate([np.ones_like(s) * s[0], s, np.ones_like(s) * s[-1]])
+
+    smooth_s = np.convolve(s, w, mode="same")
+    # Cut out the original segment.
+    smooth_s = smooth_s[l:-l]
+    s = s[l:-l]
+
+    # Abuse ObsPy to taper a bit at both ends.
+    smooth_s = obspy.Trace(data=smooth_s).taper(
+        max_percentage=0.2, type="cosine", side="left").data.clip(min=1.0)
+
+    # Get the max absolute value in depth for the vsv kernel.
+    max_vsv = np.abs(f["data"]["vsv"][:]).max(axis=(0, 1))
+
+    factor = max_vsv_change / (smooth_s * max_vsv).max()
+    print(factor, max_vsv_change, max_vsv.max(), (factor * max_vsv).max())
+
+    import matplotlib.pyplot as plt
+    plt.style.use("ggplot")
+
+    y = f["coordinate_2"][:] / 1000.0
+
+    plt.subplot(141)
+    m = max_vsv
+    plt.plot(m, y)
+    plt.xlim(-0.1 * m.ptp(), 1.1 * m.max())
+    plt.ylim(y[0], y[-1])
+    plt.title("max abs vsv")
+
+    plt.subplot(142)
+    plt.plot(s, y)
+    plt.ylim(y[0], y[-1])
+    plt.title("raw")
+
+    plt.subplot(143)
+    plt.plot(smooth_s, y)
+    plt.xlim(0, smooth_s.max() * 1.5)
+    plt.ylim(y[0], y[-1])
+    plt.title("smoothed")
+
+    plt.subplot(144)
+    m = smooth_s * max_vsv * factor
+    plt.plot(m, y)
+    plt.xlim(-0.1 * max_vsv_change, 1.1 * max_vsv_change)
+    plt.ylim(y[0], y[-1])
+    plt.title("after")
+
+    plt.suptitle("Factor: %s" % str(factor))
+
+    output = {
+        "depths": [float(i) for i in f["coordinate_2"][:]],
+        "weights": [float(i) for i in smooth_s * factor]
+    }
+
+    with io.open(output_filename, "wb") as fh:
+        json.dump(output, fh)
+
+    plt.show()
