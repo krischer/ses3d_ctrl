@@ -371,7 +371,7 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
         radius = 6371.0 - depth
 
         # set up a map and colourmap
-        m = domain.plot(ax=ax, resolution="c")
+        m = domain.plot(ax=ax, resolution="c", skip_map_features=True)
 
         import lasif.colors
         my_colormap = lasif.colors.get_colormap(
@@ -408,7 +408,7 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
             min_val_plot = mean - max_diff
             max_val_plot = mean + max_diff
             # Plotting essentially constant models.
-            min_delta = 0.01 * abs(max_val_plot)
+            min_delta = 0.001 * abs(max_val_plot)
             if (max_val_plot - min_val_plot) < min_delta:
                 max_val_plot = max_val_plot + min_delta
                 min_val_plot = min_val_plot - min_delta
@@ -658,7 +658,6 @@ def _determine_depth_scaling(f, output_filename, max_vsv_change):
     max_vsv = np.abs(f["data"]["vsv"][:]).max(axis=(0, 1))
 
     factor = max_vsv_change / (smooth_s * max_vsv).max()
-    print(factor, max_vsv_change, max_vsv.max(), (factor * max_vsv).max())
 
     import matplotlib.pyplot as plt
     plt.style.use("ggplot")
@@ -684,7 +683,7 @@ def _determine_depth_scaling(f, output_filename, max_vsv_change):
     plt.title("smoothed")
 
     plt.subplot(144)
-    m = smooth_s * max_vsv * factor
+    m = smooth_s * factor * max_vsv
     plt.plot(m, y)
     plt.xlim(-0.1 * max_vsv_change, 1.1 * max_vsv_change)
     plt.ylim(y[0], y[-1])
