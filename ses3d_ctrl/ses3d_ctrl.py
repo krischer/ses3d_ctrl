@@ -1795,18 +1795,17 @@ def taper_and_precondition_gradient(
 
 
 @cli.command()
-@click.option("--max_vsv_change", type=float, default=0.25,
-              help="All kernels will be scaled by a factor. This factor is "
-                   "calculate by restricting the maximum absolute value of "
-                   "the vsv kernel to this value. Try to choose this so that "
-                   "an initial step length of 1 will results in a misfit "
-                   "reduction.")
+@click.option("--max_kernel_value", type=float, default=1000,
+              help="The maximum value of the kernel will be scaled to this "
+                   "value. Make sure this is quite a bit higher then what is "
+                   "expected. The optimization toolkit will take care to "
+                   "proberly scale it but has troubles if its too small.")
 @click.argument("input", type=click.Path(exists=True, dir_okay=False,
                                          file_okay=True, readable=True))
 @click.argument("output", type=click.Path(exists=False, dir_okay=False,
                                           file_okay=True, writable=True))
 @pass_config
-def determine_depth_scaling(config, input, output, max_vsv_change):
+def determine_depth_scaling(config, input, output, max_kernel_value):
     """
     Determines the depth scaling of the gradients. This must only be done
     once with each L-BFGS run as things otherwise change.
@@ -1814,7 +1813,7 @@ def determine_depth_scaling(config, input, output, max_vsv_change):
     from .hdf5_model import determine_depth_scaling
     determine_depth_scaling(input_filename=input,
                             output_filename=output,
-                            max_vsv_change=max_vsv_change)
+                            max_kernel_value=max_kernel_value)
 
 
 def read_smooth_and_precondition_gradient(gradient_dir, smoothing_iterations):

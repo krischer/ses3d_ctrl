@@ -604,14 +604,14 @@ def _taper_and_precondition_hdf5_model(f, taper_colatitude_offset_in_km,
         f["data"][name][:] = data
 
 
-def determine_depth_scaling(input_filename, output_filename, max_vsv_change):
+def determine_depth_scaling(input_filename, output_filename, max_kernel_value):
     with h5py.File(input_filename, mode="r") as f:
         _determine_depth_scaling(f=f,
                                  output_filename=output_filename,
-                                 max_vsv_change=max_vsv_change)
+                                 max_kernel_value=max_kernel_value)
 
 
-def _determine_depth_scaling(f, output_filename, max_vsv_change):
+def _determine_depth_scaling(f, output_filename, max_kernel_value):
     all_scales = []
 
     for data in f["data"].values():
@@ -657,7 +657,7 @@ def _determine_depth_scaling(f, output_filename, max_vsv_change):
     # Get the max absolute value in depth for the vsv kernel.
     max_vsv = np.abs(f["data"]["vsv"][:]).max(axis=(0, 1))
 
-    factor = max_vsv_change / (smooth_s * max_vsv).max()
+    factor = max_kernel_value / (smooth_s * max_vsv).max()
 
     import matplotlib.pyplot as plt
     plt.style.use("ggplot")
@@ -685,7 +685,7 @@ def _determine_depth_scaling(f, output_filename, max_vsv_change):
     plt.subplot(144)
     m = smooth_s * factor * max_vsv
     plt.plot(m, y)
-    plt.xlim(-0.1 * max_vsv_change, 1.1 * max_vsv_change)
+    plt.xlim(-0.1 * max_kernel_value, 1.1 * max_kernel_value)
     plt.ylim(y[0], y[-1])
     plt.title("after")
 
