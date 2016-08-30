@@ -335,12 +335,107 @@ def _read_boxfile(fh):
     return setup
 
 
-def plot_hdf5_model(filename, *args, **kwargs):
+def plot_hdf5_model(filename, plot_type="horizontal", *args, **kwargs):
     with h5py.File(filename, "r") as f:
-        _plot_hdf5_model(f=f, *args, **kwargs)
+        if plot_type == "horizontal":
+            _plot_hdf5_model_horizontal(f=f, *args, **kwargs)
+        elif plot_type == "vertical":
+            _plot_hdf5_model_vertical(f=f, *args, **kwargs)
+        else:
+            raise NotImplementedError
 
 
-def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
+def _plot_hdf5_model_vertical(f, component, output_filename, vmin=None,
+                              vmax=None):
+    import matplotlib.cm
+    import matplotlib.pylab as plt
+
+    data = xarray.DataArray(
+        f["data"][component][:], [
+            ("latitude", 90.0 - f["coordinate_0"][:]),
+            ("longitude", f["coordinate_1"][:]),
+            ("radius", f["coordinate_2"][:] / 1000.0)])
+
+    plt.style.use('seaborn-pastel')
+
+    plt.figure(figsize=(32, 18))
+
+    plt.suptitle("Component %s - File %s" % (component, output_filename),
+                 fontsize=20)
+
+    count = 12
+    lats = plt.linspace(data["latitude"].min(), data["latitude"].max(),
+                        count)
+    lngs = plt.linspace(data["longitude"].min(), data["longitude"].max(),
+                        count)
+
+    import lasif.colors
+    my_colormap = lasif.colors.get_colormap(
+        "tomo_full_scale_linear_lightness")
+
+    # Overwrite colormap things if given.
+    if vmin is not None and vmax is not None:
+        min_val_plot = vmin
+        max_val_plot = vmax
+    else:
+        mean = data.mean()
+        max_diff = max(abs(mean - data.min()),
+                       abs(data.max() - mean))
+        min_val_plot = mean - max_diff
+        max_val_plot = mean + max_diff
+        # Plotting essentially constant models.
+        min_delta = 0.001 * abs(max_val_plot)
+        if (max_val_plot - min_val_plot) < min_delta:
+            max_val_plot = max_val_plot + min_delta
+            min_val_plot = min_val_plot - min_delta
+
+    for _i in range(count):
+        plt.subplot(4, count // 2, _i + 1)
+
+        x, y = np.meshgrid(data.longitude, data.radius)
+
+        plot_data = data.sel(latitude=lats[_i], method="nearest")
+        plot_data = np.ma.masked_invalid(plot_data.data)
+
+        # Plot.
+        plt.pcolormesh(
+            x, y, plot_data.T,
+            cmap=my_colormap, vmin=min_val_plot, vmax=max_val_plot,
+            shading="flat")
+
+        # make a colorbar and title
+        plt.colorbar()
+        plt.title("@Latitude: " + str(lats[_i]))
+
+
+    for _i in range(count):
+        plt.subplot(4, count // 2, count + _i + 1)
+
+        x, y = np.meshgrid(data.latitude, data.radius)
+
+        plot_data = data.sel(longitude=lngs[_i], method="nearest")
+        plot_data = np.ma.masked_invalid(plot_data.data)
+
+        # Plot.
+        plt.pcolormesh(
+            x, y, plot_data.T,
+            cmap=my_colormap, vmin=min_val_plot, vmax=max_val_plot,
+            shading="flat")
+
+        # make a colorbar and title
+        plt.colorbar()
+        plt.title("@Longitude: " + str(lngs[_i]))
+
+
+    plt.tight_layout(rect=(0, 0, 1, 0.95))
+    plt.savefig(output_filename, dpi=150)
+    plt.close()
+
+
+
+
+def _plot_hdf5_model_horizontal(f, component, output_filename,
+                                vmin=None, vmax=None):
     import matplotlib.cm
     import matplotlib.pylab as plt
 
@@ -440,6 +535,9 @@ def _plot_hdf5_model(f, component, output_filename, vmin=None, vmax=None):
     plt.legend(loc="best")
     plt.xlabel("Value")
     plt.ylabel("Radius")
+
+    plt.hlines(data.radius, plt.xlim()[0], plt.xlim()[1], color="0.8",
+               zorder=-10, linewidth=0.5)
 
     # Roughness plots.
     plt.subplot2grid((3, 5), (0, 2))
