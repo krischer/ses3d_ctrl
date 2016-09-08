@@ -89,20 +89,24 @@ class SuperMuc(SiteConfig):
         return {"status": status, "job_id": job_id}
 
     def _get_status(self, job_name):
-        # First check if the job is done by reading stdout file. The file
-        # might not yet exists, thus catch an IOError.
+        # First check the job scheduler!
+        try:
+            # If it still shows something here it is still running. Return
+            # the status.
+            return self.get_job_info(job_name)["status"]
+        except:
+            pass
+
+        # If that has no information the job might have finished. Thus check
+        # the stdout.
         try:
             if self._stdout_inidicates_job_finished(job_name):
                 return Status.finished
         except IOError:
             pass
 
-        try:
-            info = self.get_job_info(job_name)
-        except JobNotFoundError:
-            return Status.unknown
-
-        return info["status"]
+        # Otherwise who knows!
+        return Status.unknown
 
     def _run_ses3d(self, job_name, cpu_count, wall_time, email):
         """
