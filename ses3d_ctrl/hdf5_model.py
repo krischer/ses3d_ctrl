@@ -89,7 +89,16 @@ def binary_ses3d_to_hdf5_model(input_folder, lasif_project, output_filename):
             # Write to HDF5 file.
             if c in rename_dict:
                 c = rename_dict[c]
-            data_group[c] = np.require(_d.data, dtype=np.float32)
+
+            data = _d.data
+
+            # Make sure it is g\cm^3 in the hdf5 files.
+            if c == "rho":
+                if data.mean() > 1000.0:
+                    data /= 1000.0
+
+            data_group[c] = np.require(data, dtype=np.float32)
+
             data_group[c].attrs["variable_name"] = \
                 np.string_((c + "\x00").encode())
 
@@ -170,7 +179,14 @@ def _hdf5_model_to_binary_ses3d_model(f, output_folder):
             fh.write(buf.read())
 
     data = {}
-    data["rhoinv"] = 1.0 / f["data"]["rho"][:]
+
+    # SES3D internally expects a density in kg/m^3 - The hdf5 files might
+    # have g/cm^3.
+    rho = f["data"]["rho"][:]
+    if rho.mean() < 1000:
+        rho *= 1000.0
+    data["rhoinv"] = 1.0 / rho
+
     data["mu"] = (f["data"]["vsh"][:] * 1000) ** 2 / data["rhoinv"]
     data["lambda"] = \
         (f["data"]["vp"][:] * 1000) ** 2 / data["rhoinv"] - 2 * data["mu"]
